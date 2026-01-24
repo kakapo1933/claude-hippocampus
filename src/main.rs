@@ -266,7 +266,23 @@ async fn dispatch_db_command(
 
         // Hook commands
         Command::Hook { hook_type } => {
-            // Read JSON input from stdin
+            use claude_hippocampus::hooks::{handle_post_tool_use, PostToolUseInput};
+
+            // PostToolUse has different input format, handle separately
+            if hook_type == HookType::PostToolUse {
+                let raw_input = read_raw_stdin()?;
+                let input: PostToolUseInput = serde_json::from_str(&raw_input)
+                    .unwrap_or_else(|_| PostToolUseInput {
+                        tool_name: None,
+                        tool_input: None,
+                        tool_response: None,
+                        session_id: None,
+                    });
+                let output = handle_post_tool_use(pool, &input).await?;
+                return Ok(serde_json::to_value(&output)?);
+            }
+
+            // Read JSON input from stdin for standard hooks
             let input = read_hook_input()?;
 
             let output = match hook_type {
@@ -274,6 +290,7 @@ async fn dispatch_db_command(
                 HookType::UserPromptSubmit => handle_user_prompt_submit(pool, &input).await?,
                 HookType::Stop => handle_stop(&input).await?,
                 HookType::SessionEnd => handle_session_end(pool, &input).await?,
+                HookType::PostToolUse => unreachable!("Handled above"),
             };
 
             Ok(serde_json::to_value(&output)?)
@@ -286,8 +303,8 @@ async fn dispatch_db_command(
     }
 }
 
-/// Read hook input from stdin
-fn read_hook_input() -> Result<HookInput> {
+/// Read raw stdin as string
+fn read_raw_stdin() -> Result<String> {
     let stdin = io::stdin();
     let mut input = String::new();
 
@@ -297,6 +314,13 @@ fn read_hook_input() -> Result<HookInput> {
             Err(_) => break,
         }
     }
+
+    Ok(input)
+}
+
+/// Read hook input from stdin
+fn read_hook_input() -> Result<HookInput> {
+    let input = read_raw_stdin()?;
 
     if input.is_empty() {
         // Return empty input if no stdin

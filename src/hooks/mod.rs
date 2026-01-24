@@ -6,11 +6,13 @@ pub mod session_start;
 pub mod user_prompt_submit;
 pub mod stop;
 pub mod session_end;
+pub mod post_tool_use;
 
 pub use session_start::handle_session_start;
 pub use user_prompt_submit::handle_user_prompt_submit;
 pub use stop::handle_stop;
 pub use session_end::handle_session_end;
+pub use post_tool_use::{handle_post_tool_use, PostToolUseInput};
 
 use serde::{Deserialize, Serialize};
 

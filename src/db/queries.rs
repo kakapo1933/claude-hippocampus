@@ -803,6 +803,57 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> Result<Memory> {
 }
 
 // ============================================================================
+// Tool Call Recording
+// ============================================================================
+
+/// Tool call record
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ToolCall {
+    pub id: Uuid,
+    pub session_id: Option<Uuid>,
+    pub turn_id: Option<Uuid>,
+    pub tool_name: String,
+    pub parameters: Option<serde_json::Value>,
+    pub result_summary: Option<String>,
+    pub called_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// Record a tool call to the database
+pub async fn record_tool_call(
+    pool: &PgPool,
+    session_id: Option<Uuid>,
+    turn_id: Option<Uuid>,
+    tool_name: &str,
+    parameters: Option<serde_json::Value>,
+    result_summary: Option<String>,
+) -> Result<ToolCall> {
+    let row = sqlx::query(
+        r#"
+        INSERT INTO tool_calls (session_id, turn_id, tool_name, parameters, result_summary)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING id, session_id, turn_id, tool_name, parameters, result_summary, called_at
+        "#,
+    )
+    .bind(session_id)
+    .bind(turn_id)
+    .bind(tool_name)
+    .bind(&parameters)
+    .bind(&result_summary)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(ToolCall {
+        id: row.get("id"),
+        session_id: row.get("session_id"),
+        turn_id: row.get("turn_id"),
+        tool_name: row.get("tool_name"),
+        parameters: row.get("parameters"),
+        result_summary: row.get("result_summary"),
+        called_at: row.get("called_at"),
+    })
+}
+
+// ============================================================================
 // Tests (unit tests - integration tests require database)
 // ============================================================================
 
@@ -819,6 +870,21 @@ mod tests {
         };
         assert_eq!(info.scope, "project");
         assert_eq!(info.summary, "Test summary");
+    }
+
+    #[test]
+    fn test_tool_call_struct() {
+        let tool_call = ToolCall {
+            id: Uuid::new_v4(),
+            session_id: Some(Uuid::new_v4()),
+            turn_id: None,
+            tool_name: "Read".to_string(),
+            parameters: Some(serde_json::json!({"file_path": "/tmp/test.txt"})),
+            result_summary: Some("File read successfully".to_string()),
+            called_at: chrono::Utc::now(),
+        };
+        assert_eq!(tool_call.tool_name, "Read");
+        assert!(tool_call.parameters.is_some());
     }
 
     // Note: Most query tests require a live database connection

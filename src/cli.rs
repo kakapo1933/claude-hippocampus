@@ -218,6 +218,8 @@ pub enum HookType {
     Stop,
     /// Session end hook - ends session, cleanup
     SessionEnd,
+    /// Post tool use hook - records tool calls to database
+    PostToolUse,
 }
 
 // Custom parsers for enum types
@@ -1055,6 +1057,17 @@ mod tests {
         match cli.command {
             Command::Hook { hook_type } => {
                 assert!(matches!(hook_type, HookType::SessionEnd));
+            }
+            _ => panic!("Expected Hook command"),
+        }
+    }
+
+    #[test]
+    fn test_hook_post_tool_use() {
+        let cli = Cli::parse_from(["claude-hippocampus", "hook", "post-tool-use"]);
+        match cli.command {
+            Command::Hook { hook_type } => {
+                assert!(matches!(hook_type, HookType::PostToolUse));
             }
             _ => panic!("Expected Hook command"),
         }

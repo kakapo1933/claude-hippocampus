@@ -9,6 +9,5 @@ pub use queries::{
     // Session queries
     create_session, end_session, find_session_by_claude_id, find_session_by_id,
     // Turn queries
-    create_turn, get_latest_turn, get_next_turn_number, get_turn, list_turns_by_session,
-    update_turn,
+    create_turn, find_turn_by_id, get_next_turn_number, update_turn,
 };

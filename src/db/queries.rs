@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::error::{HippocampusError, Result};
 use crate::git::GitStatus;
-use crate::models::{Confidence, Memory, MemoryType, Scope, Session, SessionStatus};
+use crate::models::{Confidence, Memory, MemoryType, Scope, Session};
 
 /// Check for duplicate memory by matching first 100 chars of content
 pub async fn find_duplicate(
@@ -678,14 +678,14 @@ pub async fn create_turn(
 
 /// Get the next turn number for a session
 pub async fn get_next_turn_number(pool: &PgPool, session_id: Uuid) -> Result<i32> {
-    let count: Option<i64> = sqlx::query_scalar(
-        "SELECT MAX(turn_number) FROM conversation_turns WHERE session_id = $1",
+    let count: Option<i32> = sqlx::query_scalar(
+        "SELECT MAX(turn_number)::INT4 FROM conversation_turns WHERE session_id = $1",
     )
     .bind(session_id)
     .fetch_one(pool)
     .await?;
 
-    Ok(count.map(|n| n as i32 + 1).unwrap_or(1))
+    Ok(count.map(|n| n + 1).unwrap_or(1))
 }
 
 /// Find turn by ID

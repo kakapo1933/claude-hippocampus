@@ -195,6 +195,29 @@ pub enum Command {
         #[arg(long = "output-tokens")]
         output_tokens: Option<i32>,
     },
+
+    // =========================================================================
+    // Hook Commands (for Claude Code settings.json integration)
+    // =========================================================================
+
+    /// Run a hook handler (reads JSON from stdin, outputs JSON)
+    Hook {
+        #[command(subcommand)]
+        hook_type: HookType,
+    },
+}
+
+/// Hook types that can be invoked from settings.json
+#[derive(Subcommand, Debug, Clone, PartialEq)]
+pub enum HookType {
+    /// Session start hook - creates session, loads context
+    SessionStart,
+    /// User prompt submit hook - creates turn, outputs memory search instructions
+    UserPromptSubmit,
+    /// Stop hook - runs after each Claude response
+    Stop,
+    /// Session end hook - ends session, cleanup
+    SessionEnd,
 }
 
 // Custom parsers for enum types
@@ -986,6 +1009,66 @@ mod tests {
             "update-turn",
             "--turn-id=abc",
         ]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // Hook command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_hook_session_start() {
+        let cli = Cli::parse_from(["claude-hippocampus", "hook", "session-start"]);
+        match cli.command {
+            Command::Hook { hook_type } => {
+                assert!(matches!(hook_type, HookType::SessionStart));
+            }
+            _ => panic!("Expected Hook command"),
+        }
+    }
+
+    #[test]
+    fn test_hook_user_prompt_submit() {
+        let cli = Cli::parse_from(["claude-hippocampus", "hook", "user-prompt-submit"]);
+        match cli.command {
+            Command::Hook { hook_type } => {
+                assert!(matches!(hook_type, HookType::UserPromptSubmit));
+            }
+            _ => panic!("Expected Hook command"),
+        }
+    }
+
+    #[test]
+    fn test_hook_stop() {
+        let cli = Cli::parse_from(["claude-hippocampus", "hook", "stop"]);
+        match cli.command {
+            Command::Hook { hook_type } => {
+                assert!(matches!(hook_type, HookType::Stop));
+            }
+            _ => panic!("Expected Hook command"),
+        }
+    }
+
+    #[test]
+    fn test_hook_session_end() {
+        let cli = Cli::parse_from(["claude-hippocampus", "hook", "session-end"]);
+        match cli.command {
+            Command::Hook { hook_type } => {
+                assert!(matches!(hook_type, HookType::SessionEnd));
+            }
+            _ => panic!("Expected Hook command"),
+        }
+    }
+
+    #[test]
+    fn test_hook_missing_type_fails() {
+        let result = Cli::try_parse_from(["claude-hippocampus", "hook"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_hook_invalid_type_fails() {
+        let result = Cli::try_parse_from(["claude-hippocampus", "hook", "invalid-hook"]);
         assert!(result.is_err());
     }
 }

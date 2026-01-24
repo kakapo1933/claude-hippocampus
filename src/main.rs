@@ -7,8 +7,11 @@ use clap::Parser;
 use std::env;
 use uuid::Uuid;
 
+use std::io::{self, BufRead};
+
 use claude_hippocampus::{
-    clear_logs, parse_tags, read_logs, Cli, Command, DbConfig, Result,
+    clear_logs, parse_tags, read_logs, Cli, Command, DbConfig, HookType, Result,
+    HookInput, handle_session_start, handle_user_prompt_submit, handle_stop, handle_session_end,
 };
 use claude_hippocampus::commands::{
     add_memory, consolidate, delete_memory, get_context, get_memory, list_recent, prune,
@@ -261,10 +264,57 @@ async fn dispatch_db_command(
             Ok(serde_json::to_value(SuccessResponse::new(turn))?)
         }
 
+        // Hook commands
+        Command::Hook { hook_type } => {
+            // Read JSON input from stdin
+            let input = read_hook_input()?;
+
+            let output = match hook_type {
+                HookType::SessionStart => handle_session_start(pool, &input).await?,
+                HookType::UserPromptSubmit => handle_user_prompt_submit(pool, &input).await?,
+                HookType::Stop => handle_stop(&input).await?,
+                HookType::SessionEnd => handle_session_end(pool, &input).await?,
+            };
+
+            Ok(serde_json::to_value(&output)?)
+        }
+
         // These are handled in run() before this function is called
         Command::Logs { .. } | Command::ClearLogs => {
             unreachable!("Logs commands should be handled before database dispatch")
         }
+    }
+}
+
+/// Read hook input from stdin
+fn read_hook_input() -> Result<HookInput> {
+    let stdin = io::stdin();
+    let mut input = String::new();
+
+    for line in stdin.lock().lines() {
+        match line {
+            Ok(l) => input.push_str(&l),
+            Err(_) => break,
+        }
+    }
+
+    if input.is_empty() {
+        // Return empty input if no stdin
+        Ok(HookInput {
+            session_id: None,
+            prompt: None,
+            transcript_path: None,
+            cwd: None,
+            permission_mode: None,
+            hook_event_name: None,
+        })
+    } else {
+        serde_json::from_str(&input).map_err(|e| {
+            claude_hippocampus::error::HippocampusError::Config(format!(
+                "Failed to parse hook input: {}",
+                e
+            ))
+        })
     }
 }
 

@@ -29,6 +29,11 @@ fn debug(msg: &str) {
     }
 }
 
+/// Safely truncate a string at char boundaries (not byte boundaries)
+fn truncate_str(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
+}
+
 /// Marker file path for stop hook coordination
 fn get_marker_file(claude_session_id: &str) -> String {
     format!("/tmp/claude-memory-extract-{}", claude_session_id)
@@ -75,8 +80,8 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
     let (user_msg, assistant_msg) = extract_last_messages(&transcript);
     debug(&format!(
         "Extracted - user: {:?}, assistant: {:?}",
-        user_msg.as_ref().map(|s| &s[..s.len().min(50)]),
-        assistant_msg.as_ref().map(|s| &s[..s.len().min(50)])
+        user_msg.as_ref().map(|s| truncate_str(s, 50)),
+        assistant_msg.as_ref().map(|s| truncate_str(s, 50))
     ));
 
     // Skip if we don't have both messages

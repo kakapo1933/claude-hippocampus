@@ -3,13 +3,31 @@
 //! Runs after each Claude response. Manages marker files to prevent duplicate processing.
 //! Spawns headless Claude to extract conclusions and save them to memory.
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::Path;
 use std::process::{Command, Stdio};
+
+use chrono::Utc;
 
 use crate::error::Result;
 
 use super::{HookInput, HookOutput};
+
+const DEBUG: bool = true;
+const LOG_FILE: &str = "/tmp/claude-stop-hook-rust.log";
+
+/// Debug logging to file (like JS version)
+fn debug(msg: &str) {
+    if !DEBUG {
+        return;
+    }
+    let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
+    let line = format!("[{}] {}\n", timestamp, msg);
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(LOG_FILE) {
+        let _ = file.write_all(line.as_bytes());
+    }
+}
 
 /// Marker file path for stop hook coordination
 fn get_marker_file(claude_session_id: &str) -> String {
@@ -25,17 +43,21 @@ fn get_marker_file(claude_session_id: &str) -> String {
 /// 5. Set marker file to prevent duplicate processing
 /// 6. Return approval
 pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
+    debug("=== Stop hook started ===");
+
     // Skip if this is an extraction instance (prevent recursion)
     if std::env::var("CLAUDE_MEMORY_EXTRACTION").is_ok() {
+        debug("Skipping - extraction instance");
         return Ok(HookOutput::approve());
     }
 
     let claude_session_id = input.session_id.clone().unwrap_or_else(|| "unknown".to_string());
+    debug(&format!("Session: {}", claude_session_id));
 
     // Check marker file - skip if already processed
     let marker_file = get_marker_file(&claude_session_id);
     if Path::new(&marker_file).exists() {
-        // Already processed this turn
+        debug(&format!("Skipping - marker file exists: {}", marker_file));
         return Ok(HookOutput::approve());
     }
 
@@ -51,15 +73,24 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
 
     // Extract last user and assistant messages
     let (user_msg, assistant_msg) = extract_last_messages(&transcript);
+    debug(&format!(
+        "Extracted - user: {:?}, assistant: {:?}",
+        user_msg.as_ref().map(|s| &s[..s.len().min(50)]),
+        assistant_msg.as_ref().map(|s| &s[..s.len().min(50)])
+    ));
 
     // Skip if we don't have both messages
     let (user_msg, assistant_msg) = match (user_msg, assistant_msg) {
         (Some(u), Some(a)) => (u, a),
-        _ => return Ok(HookOutput::approve()),
+        _ => {
+            debug("Skipping - missing user or assistant message");
+            return Ok(HookOutput::approve());
+        }
     };
 
     // Skip if not substantive
     if !should_extract(&user_msg, &assistant_msg) {
+        debug("Skipping - turn not substantive");
         return Ok(HookOutput::approve());
     }
 
@@ -71,9 +102,15 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
         String::new(), // Turn ID not available in stop hook input
     );
 
+    debug(&format!(
+        "Spawning extraction, confidence: {}",
+        ctx.confidence()
+    ));
+
     // Spawn background extraction process
     spawn_extraction(&ctx);
 
+    debug("=== Stop hook completed ===");
     Ok(HookOutput::approve())
 }
 
@@ -83,48 +120,69 @@ fn spawn_extraction(ctx: &ExtractionContext) {
     let confidence = ctx.confidence().to_string();
     let session_id = ctx.session_id.clone();
 
-    // Spawn in background thread to avoid blocking
-    std::thread::spawn(move || {
-        // Run claude --print and capture output
-        let result = Command::new("claude")
-            .args(["--print", "-p", &prompt])
-            .env("CLAUDE_MEMORY_EXTRACTION", "1")
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .output();
+    debug(&format!(
+        "Spawning detached extraction for session: {}",
+        session_id
+    ));
 
-        let output = match result {
-            Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-            Err(_) => return,
-        };
+    // Escape prompt for shell (replace single quotes with escaped version)
+    let escaped_prompt = prompt.replace('\'', "'\"'\"'");
 
-        // Parse extraction result
-        let extraction = match parse_extraction_response(&output) {
-            Some(e) => e,
-            None => return,
-        };
+    // Build shell command that runs in background
+    // The script: runs claude --print, parses JSON, saves to memory
+    let script = format!(
+        r#"
+LOG="/tmp/claude-stop-hook-rust.log"
+log() {{ echo "[$(date -u +%Y-%m-%dT%H:%M:%S.000Z)] $1" >> "$LOG"; }}
 
-        // Save to memory using claude-hippocampus add-memory
-        let mut args = vec![
-            "add-memory".to_string(),
-            extraction.memory_type,
-            extraction.conclusion,
-            extraction.tags,
-            confidence,
-            "project".to_string(),
-        ];
+log "Extraction subprocess started"
 
-        if !session_id.is_empty() {
-            args.push("--claude-session".to_string());
-            args.push(session_id);
-        }
+# Run claude --print
+OUTPUT=$(CLAUDE_MEMORY_EXTRACTION=1 claude --print -p '{escaped_prompt}' 2>/dev/null)
+log "claude --print completed, output length: ${{#OUTPUT}}"
 
-        let _ = Command::new("claude-hippocampus")
-            .args(&args)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
-    });
+# Extract JSON from output (find first {{ to last }})
+JSON=$(echo "$OUTPUT" | grep -o '{{.*}}' | head -1)
+if [ -z "$JSON" ]; then
+    log "Failed to extract JSON from output: ${{OUTPUT:0:200}}"
+    exit 1
+fi
+
+log "Extracted JSON: $JSON"
+
+# Parse JSON fields using jq
+TYPE=$(echo "$JSON" | jq -r '.type // empty')
+CONCLUSION=$(echo "$JSON" | jq -r '.conclusion // empty')
+TAGS=$(echo "$JSON" | jq -r '.tags // empty')
+
+if [ -z "$TYPE" ] || [ -z "$CONCLUSION" ]; then
+    log "Missing required fields: type=$TYPE, conclusion=$CONCLUSION"
+    exit 1
+fi
+
+log "Parsed: type=$TYPE, conclusion=${{CONCLUSION:0:50}}..."
+
+# Save to memory
+claude-hippocampus add-memory "$TYPE" "$CONCLUSION" "$TAGS" "{confidence}" project --claude-session "{session_id}" >> "$LOG" 2>&1
+log "Memory saved successfully"
+"#,
+        escaped_prompt = escaped_prompt,
+        confidence = confidence,
+        session_id = session_id
+    );
+
+    // Spawn as detached background process using nohup
+    match Command::new("sh")
+        .arg("-c")
+        .arg(format!("nohup sh -c '{}' >/dev/null 2>&1 &", script.replace('\'', "'\\''")))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+    {
+        Ok(_) => debug("Detached extraction process spawned"),
+        Err(e) => debug(&format!("Failed to spawn extraction: {}", e)),
+    }
 }
 
 /// Represents a parsed transcript entry

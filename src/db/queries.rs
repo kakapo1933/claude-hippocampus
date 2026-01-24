@@ -3,7 +3,8 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::error::{HippocampusError, Result};
-use crate::models::{Confidence, Memory, MemoryType, Scope};
+use crate::git::GitStatus;
+use crate::models::{Confidence, Memory, MemoryType, Scope, Session, SessionStatus};
 
 /// Check for duplicate memory by matching first 100 chars of content
 pub async fn find_duplicate(
@@ -543,8 +544,241 @@ pub async fn save_session_summary(
 }
 
 // ============================================================================
+// Session Queries
+// ============================================================================
+
+/// Create a new session
+pub async fn create_session(
+    pool: &PgPool,
+    claude_session_id: &str,
+    project_path: Option<&str>,
+    git_status: Option<&GitStatus>,
+) -> Result<Session> {
+    let git_status_json = git_status.map(|gs| serde_json::to_value(gs).ok()).flatten();
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO sessions (claude_session_id, project_path, git_status)
+        VALUES ($1, $2, $3)
+        RETURNING id, claude_session_id, project_path, git_status, models_used,
+                  status, summary, started_at, ended_at, created_at
+        "#,
+    )
+    .bind(claude_session_id)
+    .bind(project_path)
+    .bind(&git_status_json)
+    .fetch_one(pool)
+    .await?;
+
+    row_to_session(&row)
+}
+
+/// Find session by database UUID
+pub async fn find_session_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Session>> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, claude_session_id, project_path, git_status, models_used,
+               status, summary, started_at, ended_at, created_at
+        FROM sessions
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(r) => Ok(Some(row_to_session(&r)?)),
+        None => Ok(None),
+    }
+}
+
+/// Find session by Claude session ID
+pub async fn find_session_by_claude_id(
+    pool: &PgPool,
+    claude_session_id: &str,
+) -> Result<Option<Session>> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, claude_session_id, project_path, git_status, models_used,
+               status, summary, started_at, ended_at, created_at
+        FROM sessions
+        WHERE claude_session_id = $1
+        "#,
+    )
+    .bind(claude_session_id)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(r) => Ok(Some(row_to_session(&r)?)),
+        None => Ok(None),
+    }
+}
+
+/// End a session
+pub async fn end_session(
+    pool: &PgPool,
+    claude_session_id: &str,
+    summary: Option<&str>,
+) -> Result<Session> {
+    let summary_json = summary.map(|s| serde_json::json!({ "summary": s }));
+
+    let row = sqlx::query(
+        r#"
+        UPDATE sessions
+        SET status = 'completed', ended_at = NOW(), summary = COALESCE($2, summary)
+        WHERE claude_session_id = $1
+        RETURNING id, claude_session_id, project_path, git_status, models_used,
+                  status, summary, started_at, ended_at, created_at
+        "#,
+    )
+    .bind(claude_session_id)
+    .bind(&summary_json)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(r) => row_to_session(&r),
+        None => Err(HippocampusError::SessionNotFound(claude_session_id.to_string())),
+    }
+}
+
+// ============================================================================
+// Turn Queries
+// ============================================================================
+
+use crate::models::Turn;
+
+/// Create a new conversation turn
+pub async fn create_turn(
+    pool: &PgPool,
+    session_id: Uuid,
+    turn_number: i32,
+    user_prompt: &str,
+    model_used: Option<&str>,
+) -> Result<Turn> {
+    let row = sqlx::query(
+        r#"
+        INSERT INTO conversation_turns (session_id, turn_number, user_prompt, model_used, started_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        RETURNING id, session_id, turn_number, user_prompt, assistant_response,
+                  model_used, input_tokens, output_tokens, started_at, ended_at, created_at
+        "#,
+    )
+    .bind(session_id)
+    .bind(turn_number)
+    .bind(user_prompt)
+    .bind(model_used)
+    .fetch_one(pool)
+    .await?;
+
+    row_to_turn(&row)
+}
+
+/// Get the next turn number for a session
+pub async fn get_next_turn_number(pool: &PgPool, session_id: Uuid) -> Result<i32> {
+    let count: Option<i64> = sqlx::query_scalar(
+        "SELECT MAX(turn_number) FROM conversation_turns WHERE session_id = $1",
+    )
+    .bind(session_id)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(count.map(|n| n as i32 + 1).unwrap_or(1))
+}
+
+/// Find turn by ID
+pub async fn find_turn_by_id(pool: &PgPool, id: Uuid) -> Result<Option<Turn>> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, session_id, turn_number, user_prompt, assistant_response,
+               model_used, input_tokens, output_tokens, started_at, ended_at, created_at
+        FROM conversation_turns
+        WHERE id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(r) => Ok(Some(row_to_turn(&r)?)),
+        None => Ok(None),
+    }
+}
+
+/// Update turn with assistant response
+pub async fn update_turn(
+    pool: &PgPool,
+    turn_id: Uuid,
+    response: &str,
+    input_tokens: Option<i32>,
+    output_tokens: Option<i32>,
+) -> Result<Turn> {
+    let row = sqlx::query(
+        r#"
+        UPDATE conversation_turns
+        SET assistant_response = $2, input_tokens = $3, output_tokens = $4, ended_at = NOW()
+        WHERE id = $1
+        RETURNING id, session_id, turn_number, user_prompt, assistant_response,
+                  model_used, input_tokens, output_tokens, started_at, ended_at, created_at
+        "#,
+    )
+    .bind(turn_id)
+    .bind(response)
+    .bind(input_tokens)
+    .bind(output_tokens)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(r) => row_to_turn(&r),
+        None => Err(HippocampusError::NotFound(format!("Turn not found: {}", turn_id))),
+    }
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
+
+fn row_to_turn(row: &sqlx::postgres::PgRow) -> Result<Turn> {
+    Ok(Turn {
+        id: row.get("id"),
+        session_id: row.get("session_id"),
+        turn_number: row.get("turn_number"),
+        user_prompt: row.get("user_prompt"),
+        assistant_response: row.get("assistant_response"),
+        model_used: row.get("model_used"),
+        input_tokens: row.get("input_tokens"),
+        output_tokens: row.get("output_tokens"),
+        started_at: row.get("started_at"),
+        ended_at: row.get("ended_at"),
+        created_at: row.get("created_at"),
+    })
+}
+
+fn row_to_session(row: &sqlx::postgres::PgRow) -> Result<Session> {
+    let status_str: String = row.get("status");
+    let git_status_json: Option<serde_json::Value> = row.get("git_status");
+
+    let git_status = git_status_json
+        .map(|v| serde_json::from_value::<GitStatus>(v).ok())
+        .flatten();
+
+    Ok(Session {
+        id: row.get("id"),
+        claude_session_id: row.get("claude_session_id"),
+        project_path: row.get("project_path"),
+        git_status,
+        models_used: row.get("models_used"),
+        status: status_str.parse()?,
+        summary: row.get("summary"),
+        started_at: row.get("started_at"),
+        ended_at: row.get("ended_at"),
+        created_at: row.get("created_at"),
+    })
+}
 
 fn row_to_memory(row: &sqlx::postgres::PgRow) -> Result<Memory> {
     let type_str: String = row.get("type");

@@ -20,8 +20,14 @@ pub enum HippocampusError {
     #[error("Invalid scope: {0}. Must be one of: project, global")]
     InvalidScope(String),
 
+    #[error("Invalid session status: {0}. Must be one of: active, completed, orphaned")]
+    InvalidSessionStatus(String),
+
     #[error("Memory not found: {0}")]
     NotFound(String),
+
+    #[error("Session not found: {0}")]
+    SessionNotFound(String),
 
     #[error("Session state error: {0}")]
     SessionState(String),

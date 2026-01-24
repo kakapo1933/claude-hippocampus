@@ -3,6 +3,7 @@ pub mod commands;
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod git;
 pub mod logging;
 pub mod models;
 pub mod session;
@@ -15,3 +16,4 @@ pub use session::{
     clear_session_state, get_session_state_path, load_session_state, save_session_state,
     SessionState,
 };
+pub use git::{get_git_status, GitStatus};

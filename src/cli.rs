@@ -133,6 +133,68 @@ pub enum Command {
 
     /// Clear all logs
     ClearLogs,
+
+    // =========================================================================
+    // Session Management Commands
+    // =========================================================================
+
+    /// Create a new session
+    CreateSession {
+        /// Claude's session identifier (required)
+        #[arg(long = "claude-session-id")]
+        claude_session_id: String,
+        /// Project path (optional, defaults to current dir)
+        #[arg(long = "project-path")]
+        project_path: Option<String>,
+    },
+
+    /// Get session by ID
+    GetSession {
+        /// Session ID (UUID or claude_session_id)
+        id: String,
+    },
+
+    /// End a session
+    EndSession {
+        /// Session ID (UUID or claude_session_id)
+        id: String,
+        /// Session summary (optional)
+        #[arg(long = "summary")]
+        summary: Option<String>,
+    },
+
+    // =========================================================================
+    // Turn Management Commands
+    // =========================================================================
+
+    /// Create a new conversation turn
+    CreateTurn {
+        /// Session ID (claude_session_id, required)
+        #[arg(long = "session")]
+        session_id: String,
+        /// User's prompt text
+        #[arg(long = "prompt")]
+        prompt: String,
+        /// Model used (optional)
+        #[arg(long = "model")]
+        model: Option<String>,
+    },
+
+    /// Update a turn with assistant response
+    UpdateTurn {
+        /// Turn ID (UUID, required)
+        #[arg(long = "turn-id")]
+        turn_id: String,
+        /// Assistant's response text
+        #[arg(long = "response")]
+        response: String,
+        /// Input tokens consumed (optional)
+        #[arg(long = "input-tokens")]
+        input_tokens: Option<i32>,
+        /// Output tokens generated (optional)
+        #[arg(long = "output-tokens")]
+        output_tokens: Option<i32>,
+    },
 }
 
 // Custom parsers for enum types
@@ -660,6 +722,271 @@ mod tests {
     #[test]
     fn test_parse_tags_with_empty_parts() {
         assert_eq!(parse_tags("tag1,,tag2"), vec!["tag1", "tag2"]);
+    }
+
+    // -------------------------------------------------------------------------
+    // CreateSession command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_create_session_with_claude_session_id() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "create-session",
+            "--claude-session-id=abc-123-def",
+        ]);
+        match cli.command {
+            Command::CreateSession {
+                claude_session_id,
+                project_path,
+            } => {
+                assert_eq!(claude_session_id, "abc-123-def");
+                assert!(project_path.is_none());
+            }
+            _ => panic!("Expected CreateSession command"),
+        }
+    }
+
+    #[test]
+    fn test_create_session_with_project_path() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "create-session",
+            "--claude-session-id=abc-123",
+            "--project-path=/path/to/project",
+        ]);
+        match cli.command {
+            Command::CreateSession {
+                claude_session_id,
+                project_path,
+            } => {
+                assert_eq!(claude_session_id, "abc-123");
+                assert_eq!(project_path, Some("/path/to/project".to_string()));
+            }
+            _ => panic!("Expected CreateSession command"),
+        }
+    }
+
+    #[test]
+    fn test_create_session_missing_required_arg_fails() {
+        // claude-session-id is required
+        let result = Cli::try_parse_from(["claude-hippocampus", "create-session"]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // GetSession command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_get_session_with_uuid() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "get-session",
+            "550e8400-e29b-41d4-a716-446655440000",
+        ]);
+        match cli.command {
+            Command::GetSession { id } => {
+                assert_eq!(id, "550e8400-e29b-41d4-a716-446655440000");
+            }
+            _ => panic!("Expected GetSession command"),
+        }
+    }
+
+    #[test]
+    fn test_get_session_with_claude_id() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "get-session",
+            "claude-session-abc123",
+        ]);
+        match cli.command {
+            Command::GetSession { id } => {
+                assert_eq!(id, "claude-session-abc123");
+            }
+            _ => panic!("Expected GetSession command"),
+        }
+    }
+
+    #[test]
+    fn test_get_session_missing_id_fails() {
+        let result = Cli::try_parse_from(["claude-hippocampus", "get-session"]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // EndSession command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_end_session_minimal() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "end-session",
+            "abc-123",
+        ]);
+        match cli.command {
+            Command::EndSession { id, summary } => {
+                assert_eq!(id, "abc-123");
+                assert!(summary.is_none());
+            }
+            _ => panic!("Expected EndSession command"),
+        }
+    }
+
+    #[test]
+    fn test_end_session_with_summary() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "end-session",
+            "abc-123",
+            "--summary=Implemented TDD workflow successfully",
+        ]);
+        match cli.command {
+            Command::EndSession { id, summary } => {
+                assert_eq!(id, "abc-123");
+                assert_eq!(summary, Some("Implemented TDD workflow successfully".to_string()));
+            }
+            _ => panic!("Expected EndSession command"),
+        }
+    }
+
+    #[test]
+    fn test_end_session_missing_id_fails() {
+        let result = Cli::try_parse_from(["claude-hippocampus", "end-session"]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // CreateTurn command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_create_turn_basic() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "create-turn",
+            "--session=abc-123",
+            "--prompt=Hello, how are you?",
+        ]);
+        match cli.command {
+            Command::CreateTurn {
+                session_id,
+                prompt,
+                model,
+            } => {
+                assert_eq!(session_id, "abc-123");
+                assert_eq!(prompt, "Hello, how are you?");
+                assert!(model.is_none());
+            }
+            _ => panic!("Expected CreateTurn command"),
+        }
+    }
+
+    #[test]
+    fn test_create_turn_with_model() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "create-turn",
+            "--session=abc-123",
+            "--prompt=Test prompt",
+            "--model=claude-3-opus",
+        ]);
+        match cli.command {
+            Command::CreateTurn { model, .. } => {
+                assert_eq!(model, Some("claude-3-opus".to_string()));
+            }
+            _ => panic!("Expected CreateTurn command"),
+        }
+    }
+
+    #[test]
+    fn test_create_turn_missing_required_args_fails() {
+        // Missing session
+        let result = Cli::try_parse_from([
+            "claude-hippocampus",
+            "create-turn",
+            "--prompt=Test",
+        ]);
+        assert!(result.is_err());
+
+        // Missing prompt
+        let result = Cli::try_parse_from([
+            "claude-hippocampus",
+            "create-turn",
+            "--session=abc",
+        ]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // UpdateTurn command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_update_turn_basic() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "update-turn",
+            "--turn-id=550e8400-e29b-41d4-a716-446655440000",
+            "--response=Here is my response",
+        ]);
+        match cli.command {
+            Command::UpdateTurn {
+                turn_id,
+                response,
+                input_tokens,
+                output_tokens,
+            } => {
+                assert_eq!(turn_id, "550e8400-e29b-41d4-a716-446655440000");
+                assert_eq!(response, "Here is my response");
+                assert!(input_tokens.is_none());
+                assert!(output_tokens.is_none());
+            }
+            _ => panic!("Expected UpdateTurn command"),
+        }
+    }
+
+    #[test]
+    fn test_update_turn_with_tokens() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "update-turn",
+            "--turn-id=abc-123",
+            "--response=Response text",
+            "--input-tokens=100",
+            "--output-tokens=250",
+        ]);
+        match cli.command {
+            Command::UpdateTurn {
+                input_tokens,
+                output_tokens,
+                ..
+            } => {
+                assert_eq!(input_tokens, Some(100));
+                assert_eq!(output_tokens, Some(250));
+            }
+            _ => panic!("Expected UpdateTurn command"),
+        }
+    }
+
+    #[test]
+    fn test_update_turn_missing_required_args_fails() {
+        // Missing turn-id
+        let result = Cli::try_parse_from([
+            "claude-hippocampus",
+            "update-turn",
+            "--response=Test",
+        ]);
+        assert!(result.is_err());
+
+        // Missing response
+        let result = Cli::try_parse_from([
+            "claude-hippocampus",
+            "update-turn",
+            "--turn-id=abc",
+        ]);
+        assert!(result.is_err());
     }
 }
 

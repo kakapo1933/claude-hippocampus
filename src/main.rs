@@ -179,6 +179,88 @@ async fn dispatch_db_command(
             save_session_summary(pool, &session_id, &summary_json).await
         }
 
+        // Session commands
+        Command::CreateSession {
+            claude_session_id,
+            project_path: project_path_arg,
+        } => {
+            use claude_hippocampus::db::queries::create_session;
+            use claude_hippocampus::git::get_git_status;
+
+            // Get project path (from arg, env, or cwd)
+            let path = project_path_arg
+                .or_else(|| project_path.map(|p| p.to_string()))
+                .or_else(|| env::current_dir().ok().map(|p| p.to_string_lossy().to_string()));
+
+            // Capture git status if we have a path
+            let git_status = path.as_ref()
+                .and_then(|p| get_git_status(p).ok())
+                .flatten();
+
+            let session = create_session(pool, &claude_session_id, path.as_deref(), git_status.as_ref()).await?;
+            Ok(serde_json::to_value(SuccessResponse::new(session))?)
+        }
+
+        Command::GetSession { id } => {
+            use claude_hippocampus::db::queries::{find_session_by_id, find_session_by_claude_id};
+
+            // Try parsing as UUID first, fall back to claude_session_id lookup
+            let session = if let Ok(uuid) = Uuid::parse_str(&id) {
+                find_session_by_id(pool, uuid).await?
+            } else {
+                find_session_by_claude_id(pool, &id).await?
+            };
+
+            match session {
+                Some(s) => Ok(serde_json::to_value(SuccessResponse::new(s))?),
+                None => Err(claude_hippocampus::error::HippocampusError::SessionNotFound(id)),
+            }
+        }
+
+        Command::EndSession { id, summary } => {
+            use claude_hippocampus::db::queries::end_session;
+
+            let session = end_session(pool, &id, summary.as_deref()).await?;
+            Ok(serde_json::to_value(SuccessResponse::new(session))?)
+        }
+
+        // Turn commands
+        Command::CreateTurn {
+            session_id,
+            prompt,
+            model,
+        } => {
+            use claude_hippocampus::db::queries::{
+                create_turn, find_session_by_claude_id, get_next_turn_number,
+            };
+
+            // Find session by claude_session_id
+            let session = find_session_by_claude_id(pool, &session_id).await?;
+            let session = session.ok_or_else(|| {
+                claude_hippocampus::error::HippocampusError::SessionNotFound(session_id.clone())
+            })?;
+
+            // Get next turn number
+            let turn_number = get_next_turn_number(pool, session.id).await?;
+
+            // Create turn
+            let turn = create_turn(pool, session.id, turn_number, &prompt, model.as_deref()).await?;
+            Ok(serde_json::to_value(SuccessResponse::new(turn))?)
+        }
+
+        Command::UpdateTurn {
+            turn_id,
+            response,
+            input_tokens,
+            output_tokens,
+        } => {
+            use claude_hippocampus::db::queries::update_turn;
+
+            let uuid = Uuid::parse_str(&turn_id)?;
+            let turn = update_turn(pool, uuid, &response, input_tokens, output_tokens).await?;
+            Ok(serde_json::to_value(SuccessResponse::new(turn))?)
+        }
+
         // These are handled in run() before this function is called
         Command::Logs { .. } | Command::ClearLogs => {
             unreachable!("Logs commands should be handled before database dispatch")

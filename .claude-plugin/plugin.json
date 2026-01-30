@@ -1,0 +1,20 @@
+{
+  "name": "claude-hippocampus",
+  "version": "0.1.0",
+  "description": "PostgreSQL-backed persistent memory for Claude Code with semantic search",
+  "author": {
+    "name": "Kaipo Chen"
+  },
+  "repository": "https://github.com/kaipochen/claude-hippocampus",
+  "keywords": ["memory", "persistence", "postgresql", "semantic-search"],
+  "skills": [
+    {
+      "name": "memory",
+      "path": "./skills/memory"
+    }
+  ],
+  "requirements": {
+    "cli": "claude-hippocampus",
+    "external": ["postgresql"]
+  }
+}

@@ -10,6 +10,7 @@ Claude Hippocampus is a native Rust replacement for the Node.js memory system, p
 
 - **Fast**: ~5ms startup vs ~50-100ms for Node.js
 - **Persistent**: PostgreSQL-backed storage with project/global scoping
+- **Plugin**: Install via `/plugin` command with skill and agent included
 - **Hook Integration**: Direct Claude Code settings.json hook support
 - **Session Tracking**: Automatic session and turn management with git status capture
 - **Tool Call Logging**: Records all tool usage for analysis
@@ -19,12 +20,27 @@ Claude Hippocampus is a native Rust replacement for the Node.js memory system, p
 
 ## Installation
 
-### Prerequisites
+### Option 1: Claude Code Plugin (Recommended)
+
+Install directly in Claude Code:
+
+```
+/plugin https://github.com/kakapo1933/claude-hippocampus
+```
+
+This installs:
+- **CLI**: `claude-hippocampus` command
+- **Skill**: `/brain-cells` - memory operations guidance
+- **Agent**: `hippocampus:memory-manager` - autonomous memory management
+
+### Option 2: Build from Source
+
+#### Prerequisites
 
 - Rust 1.70+ (`rustup install stable`)
 - PostgreSQL with the memory schema (see [schema setup](#database-setup))
 
-### Build
+#### Build
 
 ```bash
 # Clone the repository
@@ -187,11 +203,17 @@ Add hooks to your `~/.claude/settings.json`:
 
 | Hook | Purpose |
 |------|---------|
-| `SessionStart` | Creates session record, captures git status, loads memory context |
+| `SessionStart` | Creates session record, captures git status, loads top 10 memories (newest first) |
 | `UserPromptSubmit` | Creates turn record, outputs memory search instructions |
 | `Stop` | Extracts learnings from responses, saves to memory |
 | `PostToolUse` | Records tool calls with parameters and results |
 | `SessionEnd` | Marks session complete with optional summary |
+
+### Context Memory Ordering
+
+Session start loads memories ordered by:
+1. **Recency** - newest memories first (`created_at DESC`)
+2. **Confidence** - within same time, higher confidence first (high → medium → low)
 
 ## Configuration
 

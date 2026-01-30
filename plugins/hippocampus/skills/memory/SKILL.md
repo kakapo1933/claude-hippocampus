@@ -2,12 +2,12 @@
 name: memory
 description: PostgreSQL-backed persistent memory with Haiku-powered semantic search
 domain: persistence
-keywords: [memory, remember, recall, learning, decision, gotcha, convention, semantic]
-load_trigger: "remember|recall|memory|learned|decision|correction|gotcha"
+keywords: [memory, remember, recall, learning, decision, gotcha, convention, semantic, hippocampus]
+load_trigger: "remember|recall|memory|learned|decision|correction|gotcha|hippocampus"
 priority: 5
 ---
 
-# Memory Skill
+# Hippocampus Skill
 
 PostgreSQL-backed persistent memory for Claude Code sessions with Haiku-powered semantic search.
 

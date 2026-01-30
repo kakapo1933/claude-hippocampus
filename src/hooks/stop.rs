@@ -11,6 +11,7 @@ use std::process::{Command, Stdio};
 use chrono::Utc;
 
 use crate::error::Result;
+use crate::session::load_session_state;
 
 use super::{HookInput, HookOutput};
 
@@ -59,6 +60,17 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
     let claude_session_id = input.session_id.clone().unwrap_or_else(|| "unknown".to_string());
     debug(&format!("Session: {}", claude_session_id));
 
+    // Load session state to get database IDs
+    let state = load_session_state(Some(&claude_session_id))
+        .ok()
+        .flatten();
+    let db_session_id = state.as_ref().and_then(|s| s.session_id);
+    let turn_id = state.as_ref().and_then(|s| s.current_turn_id);
+    debug(&format!(
+        "Session state loaded: db_session_id={:?}, turn_id={:?}",
+        db_session_id, turn_id
+    ));
+
     // Check marker file - skip if already processed
     let marker_file = get_marker_file(&claude_session_id);
     if Path::new(&marker_file).exists() {
@@ -104,7 +116,8 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
         user_msg.clone(),
         assistant_msg.clone(),
         claude_session_id.clone(),
-        String::new(), // Turn ID not available in stop hook input
+        db_session_id.map(|u| u.to_string()).unwrap_or_default(),
+        turn_id.map(|u| u.to_string()).unwrap_or_default(),
     );
 
     debug(&format!(
@@ -123,15 +136,29 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
 fn spawn_extraction(ctx: &ExtractionContext) {
     let prompt = build_extraction_prompt(&ctx.user_msg, &ctx.assistant_response);
     let confidence = ctx.confidence().to_string();
-    let session_id = ctx.session_id.clone();
+    let claude_session_id = ctx.claude_session_id.clone();
+    let db_session_id = ctx.db_session_id.clone();
+    let turn_id = ctx.turn_id.clone();
 
     debug(&format!(
-        "Spawning detached extraction for session: {}",
-        session_id
+        "Spawning detached extraction for session: {}, db_session: {}, turn: {}",
+        claude_session_id, db_session_id, turn_id
     ));
 
     // Escape prompt for shell (replace single quotes with escaped version)
     let escaped_prompt = prompt.replace('\'', "'\"'\"'");
+
+    // Build optional flags for session and turn IDs
+    let session_flag = if !db_session_id.is_empty() {
+        format!("--session \"{}\"", db_session_id)
+    } else {
+        String::new()
+    };
+    let turn_flag = if !turn_id.is_empty() {
+        format!("--turn \"{}\"", turn_id)
+    } else {
+        String::new()
+    };
 
     // Build shell command that runs in background
     // The script: runs claude --print, parses JSON, saves to memory
@@ -168,12 +195,14 @@ fi
 log "Parsed: type=$TYPE, conclusion=${{CONCLUSION:0:50}}..."
 
 # Save to memory
-claude-hippocampus add-memory "$TYPE" "$CONCLUSION" "$TAGS" "{confidence}" project --claude-session "{session_id}" >> "$LOG" 2>&1
+claude-hippocampus add-memory "$TYPE" "$CONCLUSION" "$TAGS" "{confidence}" project --claude-session "{claude_session_id}" {session_flag} {turn_flag} >> "$LOG" 2>&1
 log "Memory saved successfully"
 "#,
         escaped_prompt = escaped_prompt,
         confidence = confidence,
-        session_id = session_id
+        claude_session_id = claude_session_id,
+        session_flag = session_flag,
+        turn_flag = turn_flag
     );
 
     // Spawn as detached background process using nohup
@@ -210,7 +239,11 @@ pub struct ExtractionResult {
 pub struct ExtractionContext {
     pub user_msg: String,
     pub assistant_response: String,
-    pub session_id: String,
+    /// Claude's session identifier (for marker files)
+    pub claude_session_id: String,
+    /// Database session UUID
+    pub db_session_id: String,
+    /// Database turn UUID
     pub turn_id: String,
 }
 
@@ -218,13 +251,15 @@ impl ExtractionContext {
     pub fn new(
         user_msg: String,
         assistant_response: String,
-        session_id: String,
+        claude_session_id: String,
+        db_session_id: String,
         turn_id: String,
     ) -> Self {
         Self {
             user_msg,
             assistant_response,
-            session_id,
+            claude_session_id,
+            db_session_id,
             turn_id,
         }
     }
@@ -633,12 +668,15 @@ mod tests {
         let ctx = ExtractionContext::new(
             "user msg".to_string(),
             "assistant response".to_string(),
-            "session-123".to_string(),
-            "turn-456".to_string(),
+            "claude-session-123".to_string(),
+            "db-session-456".to_string(),
+            "turn-789".to_string(),
         );
         assert_eq!(ctx.user_msg, "user msg");
         assert_eq!(ctx.assistant_response, "assistant response");
-        assert_eq!(ctx.session_id, "session-123");
+        assert_eq!(ctx.claude_session_id, "claude-session-123");
+        assert_eq!(ctx.db_session_id, "db-session-456");
+        assert_eq!(ctx.turn_id, "turn-789");
     }
 
     #[test]
@@ -646,7 +684,8 @@ mod tests {
         let ctx = ExtractionContext::new(
             "actually, use tokio instead".to_string(),
             "Got it, using tokio".to_string(),
-            "s".to_string(),
+            "claude-s".to_string(),
+            "db-s".to_string(),
             "t".to_string(),
         );
         assert_eq!(ctx.confidence(), "high");
@@ -657,7 +696,8 @@ mod tests {
         let ctx = ExtractionContext::new(
             "How do I implement a queue?".to_string(),
             "Here's how...".to_string(),
-            "s".to_string(),
+            "claude-s".to_string(),
+            "db-s".to_string(),
             "t".to_string(),
         );
         assert_eq!(ctx.confidence(), "medium");

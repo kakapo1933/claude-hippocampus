@@ -261,6 +261,203 @@ pub async fn search_keyword(
     rows.iter().map(row_to_memory).collect()
 }
 
+/// Search memories by type (with optional keyword filter)
+pub async fn search_by_type(
+    pool: &PgPool,
+    memory_type: MemoryType,
+    query: Option<&str>,
+    scope_filter: Option<Scope>,
+    project_path: Option<&str>,
+    include_both_scopes: bool,
+    limit: i32,
+) -> Result<Vec<Memory>> {
+    let query_pattern = query.map(|q| format!("%{}%", q));
+
+    // Build the WHERE clause based on scope filter and optional query
+    let rows = match (include_both_scopes, scope_filter, &query_pattern) {
+        // Both scopes, with keyword
+        (true, _, Some(pattern)) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                  AND (scope = 'global' OR (scope = 'project' AND project_path = $4))
+                  AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $3
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(pattern)
+            .bind(limit as i64)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        }
+        // Both scopes, no keyword
+        (true, _, None) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                  AND (scope = 'global' OR (scope = 'project' AND project_path = $3))
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $2
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(limit as i64)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        }
+        // Project scope, with keyword
+        (false, Some(Scope::Project), Some(pattern)) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                  AND scope = 'project' AND project_path = $4
+                  AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $3
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(pattern)
+            .bind(limit as i64)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        }
+        // Project scope, no keyword
+        (false, Some(Scope::Project), None) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                  AND scope = 'project' AND project_path = $3
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $2
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(limit as i64)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        }
+        // Global scope, with keyword
+        (false, Some(Scope::Global), Some(pattern)) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                  AND scope = 'global'
+                  AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $3
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(pattern)
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await?
+        }
+        // Global scope, no keyword
+        (false, Some(Scope::Global), None) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                  AND scope = 'global'
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $2
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await?
+        }
+        // No scope filter, with keyword
+        (false, None, Some(pattern)) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                  AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $3
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(pattern)
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await?
+        }
+        // No scope filter, no keyword
+        (false, None, None) => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count
+                FROM memories
+                WHERE type = $1
+                ORDER BY
+                  CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                  created_at DESC
+                LIMIT $2
+                "#,
+            )
+            .bind(memory_type.as_str())
+            .bind(limit as i64)
+            .fetch_all(pool)
+            .await?
+        }
+    };
+
+    rows.iter().map(row_to_memory).collect()
+}
+
 /// Get memories for context (high priority, recent)
 pub async fn get_context_memories(
     pool: &PgPool,
@@ -287,6 +484,159 @@ pub async fn get_context_memories(
     .await?;
 
     rows.iter().map(row_to_memory).collect()
+}
+
+/// Memory statistics
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct MemoryStats {
+    pub total: i64,
+    pub by_type: TypeCounts,
+    pub by_confidence: ConfidenceCounts,
+    pub by_scope: ScopeCounts,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct TypeCounts {
+    pub convention: i64,
+    pub architecture: i64,
+    pub gotcha: i64,
+    pub api: i64,
+    pub learning: i64,
+    pub preference: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ConfidenceCounts {
+    pub high: i64,
+    pub medium: i64,
+    pub low: i64,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ScopeCounts {
+    pub project: i64,
+    pub global: i64,
+}
+
+/// Get memory statistics
+pub async fn get_stats(
+    pool: &PgPool,
+    scope_filter: Option<Scope>,
+    project_path: Option<&str>,
+    include_both_scopes: bool,
+) -> Result<MemoryStats> {
+    // Build WHERE clause based on scope filter
+    let where_clause = if include_both_scopes {
+        format!(
+            "WHERE (scope = 'global' OR (scope = 'project' AND project_path = '{}'))",
+            project_path.unwrap_or("")
+        )
+    } else if let Some(scope) = scope_filter {
+        if scope == Scope::Project {
+            format!(
+                "WHERE scope = 'project' AND project_path = '{}'",
+                project_path.unwrap_or("")
+            )
+        } else {
+            "WHERE scope = 'global'".to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    // Get total count
+    let total: i64 = sqlx::query_scalar(&format!(
+        "SELECT COUNT(*) FROM memories {}",
+        where_clause
+    ))
+    .fetch_one(pool)
+    .await?;
+
+    // Get counts by type
+    let type_rows = sqlx::query(&format!(
+        "SELECT type, COUNT(*) as count FROM memories {} GROUP BY type",
+        where_clause
+    ))
+    .fetch_all(pool)
+    .await?;
+
+    let mut by_type = TypeCounts {
+        convention: 0,
+        architecture: 0,
+        gotcha: 0,
+        api: 0,
+        learning: 0,
+        preference: 0,
+    };
+
+    for row in &type_rows {
+        let type_str: String = row.get("type");
+        let count: i64 = row.get("count");
+        match type_str.as_str() {
+            "convention" => by_type.convention = count,
+            "architecture" => by_type.architecture = count,
+            "gotcha" => by_type.gotcha = count,
+            "api" => by_type.api = count,
+            "learning" => by_type.learning = count,
+            "preference" => by_type.preference = count,
+            _ => {}
+        }
+    }
+
+    // Get counts by confidence
+    let conf_rows = sqlx::query(&format!(
+        "SELECT confidence, COUNT(*) as count FROM memories {} GROUP BY confidence",
+        where_clause
+    ))
+    .fetch_all(pool)
+    .await?;
+
+    let mut by_confidence = ConfidenceCounts {
+        high: 0,
+        medium: 0,
+        low: 0,
+    };
+
+    for row in &conf_rows {
+        let conf_str: String = row.get("confidence");
+        let count: i64 = row.get("count");
+        match conf_str.as_str() {
+            "high" => by_confidence.high = count,
+            "medium" => by_confidence.medium = count,
+            "low" => by_confidence.low = count,
+            _ => {}
+        }
+    }
+
+    // Get counts by scope
+    let scope_rows = sqlx::query(&format!(
+        "SELECT scope, COUNT(*) as count FROM memories {} GROUP BY scope",
+        where_clause
+    ))
+    .fetch_all(pool)
+    .await?;
+
+    let mut by_scope = ScopeCounts {
+        project: 0,
+        global: 0,
+    };
+
+    for row in &scope_rows {
+        let scope_str: String = row.get("scope");
+        let count: i64 = row.get("count");
+        match scope_str.as_str() {
+            "project" => by_scope.project = count,
+            "global" => by_scope.global = count,
+            _ => {}
+        }
+    }
+
+    Ok(MemoryStats {
+        total,
+        by_type,
+        by_confidence,
+        by_scope,
+    })
 }
 
 /// Update access tracking for memories (accessed_at, access_count)

@@ -7,7 +7,7 @@ use sqlx::postgres::PgPool;
 
 use crate::db::queries;
 use crate::error::Result;
-use crate::models::{Memory, MemorySummary, Scope, Tier};
+use crate::models::{Memory, MemorySummary, MemoryType, Scope, Tier};
 
 // ============================================================================
 // Search Options
@@ -35,6 +35,21 @@ impl Default for SearchOptions {
             project_path: None,
         }
     }
+}
+
+/// Options for search by type
+#[derive(Debug, Clone)]
+pub struct SearchByTypeOptions {
+    /// Memory type to filter by
+    pub memory_type: MemoryType,
+    /// Optional keyword filter
+    pub query: Option<String>,
+    /// Tier filter (project, global, or both)
+    pub tier: Tier,
+    /// Maximum number of results
+    pub limit: i32,
+    /// Project path for project-scoped queries
+    pub project_path: Option<String>,
 }
 
 // ============================================================================
@@ -124,6 +139,36 @@ pub async fn search_keyword(pool: &PgPool, options: SearchOptions) -> Result<Sea
     let memories = queries::search_keyword(
         pool,
         &options.query,
+        scope_filter,
+        options.project_path.as_deref(),
+        include_both,
+        options.limit,
+    )
+    .await?;
+
+    // Mark returned memories as accessed
+    if !memories.is_empty() {
+        let ids: Vec<uuid::Uuid> = memories.iter().map(|m| m.id).collect();
+        queries::mark_memories_accessed(pool, &ids).await?;
+    }
+
+    let results: Vec<MemorySearchItem> = memories.into_iter().map(Into::into).collect();
+    let count = results.len();
+
+    Ok(SearchResult { results, count })
+}
+
+/// Search memories by type (with optional keyword filter).
+///
+/// Filters by memory type first, then optionally by keyword.
+/// Results are ordered by confidence (high → medium → low), then by recency.
+pub async fn search_by_type(pool: &PgPool, options: SearchByTypeOptions) -> Result<SearchResult> {
+    let (scope_filter, include_both) = tier_to_scope_filter(options.tier);
+
+    let memories = queries::search_by_type(
+        pool,
+        options.memory_type,
+        options.query.as_deref(),
         scope_filter,
         options.project_path.as_deref(),
         include_both,
@@ -455,6 +500,66 @@ mod tests {
 
         assert!(result.results.is_empty());
         assert_eq!(result.count, 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // SearchByTypeOptions tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_search_by_type_options_all_fields() {
+        let options = SearchByTypeOptions {
+            memory_type: MemoryType::Gotcha,
+            query: Some("test query".to_string()),
+            tier: Tier::Project,
+            limit: 10,
+            project_path: Some("/test/path".to_string()),
+        };
+
+        assert_eq!(options.memory_type, MemoryType::Gotcha);
+        assert_eq!(options.query, Some("test query".to_string()));
+        assert_eq!(options.tier, Tier::Project);
+        assert_eq!(options.limit, 10);
+        assert_eq!(options.project_path, Some("/test/path".to_string()));
+    }
+
+    #[test]
+    fn test_search_by_type_options_no_query() {
+        let options = SearchByTypeOptions {
+            memory_type: MemoryType::Learning,
+            query: None,
+            tier: Tier::Both,
+            limit: 30,
+            project_path: None,
+        };
+
+        assert_eq!(options.memory_type, MemoryType::Learning);
+        assert!(options.query.is_none());
+        assert_eq!(options.tier, Tier::Both);
+        assert_eq!(options.limit, 30);
+        assert!(options.project_path.is_none());
+    }
+
+    #[test]
+    fn test_search_by_type_options_all_memory_types() {
+        for memory_type in [
+            MemoryType::Convention,
+            MemoryType::Architecture,
+            MemoryType::Gotcha,
+            MemoryType::Api,
+            MemoryType::Learning,
+            MemoryType::Preference,
+        ] {
+            let options = SearchByTypeOptions {
+                memory_type,
+                query: None,
+                tier: Tier::Both,
+                limit: 10,
+                project_path: None,
+            };
+            // Just ensure we can create options for all types
+            assert_eq!(options.memory_type, memory_type);
+        }
     }
 
     // -------------------------------------------------------------------------

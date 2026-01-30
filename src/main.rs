@@ -14,8 +14,9 @@ use claude_hippocampus::{
     HookInput, handle_session_start, handle_user_prompt_submit, handle_stop, handle_session_end,
 };
 use claude_hippocampus::commands::{
-    add_memory, consolidate, delete_memory, get_context, get_memory, list_recent, prune,
-    save_session_summary, search_keyword, update_memory, AddMemoryOptions, SearchOptions,
+    add_memory, consolidate, delete_memory, get_context, get_memory, get_stats, list_recent, prune,
+    save_session_summary, search_by_type, search_keyword, update_memory, AddMemoryOptions,
+    SearchByTypeOptions, SearchOptions, StatsOptions,
 };
 use claude_hippocampus::db::create_pool;
 use claude_hippocampus::models::{
@@ -69,6 +70,22 @@ async fn run(cli: Cli) -> Result<serde_json::Value> {
             Ok(serde_json::to_value(SuccessResponse::new(ClearLogsData {
                 cleared: true,
             }))?)
+        }
+
+        Command::Stats { tier } => {
+            // Stats requires database connection
+            let config = DbConfig::load()?;
+            let pool = create_pool(&config).await?;
+            let project_path = env::var("PROJECT_PATH")
+                .or_else(|_| env::current_dir().map(|p| p.to_string_lossy().to_string()))
+                .ok();
+
+            let options = StatsOptions {
+                tier,
+                project_path,
+            };
+            let result = get_stats(&pool, options).await?;
+            Ok(serde_json::to_value(SuccessResponse::new(result))?)
         }
 
         // Commands that require database connection
@@ -154,6 +171,23 @@ async fn dispatch_db_command(
                 project_path: project_path.map(|s| s.to_string()),
             };
             let result = search_keyword(pool, options).await?;
+            Ok(serde_json::to_value(SuccessResponse::new(result))?)
+        }
+
+        Command::SearchByType {
+            memory_type,
+            query,
+            tier,
+            limit,
+        } => {
+            let options = SearchByTypeOptions {
+                memory_type,
+                query,
+                tier,
+                limit: limit as i32,
+                project_path: project_path.map(|s| s.to_string()),
+            };
+            let result = search_by_type(pool, options).await?;
             Ok(serde_json::to_value(SuccessResponse::new(result))?)
         }
 
@@ -297,8 +331,8 @@ async fn dispatch_db_command(
         }
 
         // These are handled in run() before this function is called
-        Command::Logs { .. } | Command::ClearLogs => {
-            unreachable!("Logs commands should be handled before database dispatch")
+        Command::Logs { .. } | Command::ClearLogs | Command::Stats { .. } => {
+            unreachable!("These commands are handled in run() before database dispatch")
         }
     }
 }

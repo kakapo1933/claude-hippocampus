@@ -82,6 +82,21 @@ pub enum Command {
         limit: i64,
     },
 
+    /// Search memories by type (with optional keyword filter)
+    SearchByType {
+        /// Memory type: convention, architecture, gotcha, api, learning, preference
+        #[arg(value_parser = parse_memory_type)]
+        memory_type: MemoryType,
+        /// Optional keyword filter
+        query: Option<String>,
+        /// Tier filter: project, global, both
+        #[arg(default_value = "both", value_parser = parse_tier)]
+        tier: Tier,
+        /// Maximum results to return
+        #[arg(default_value = "30")]
+        limit: i64,
+    },
+
     /// Get context block for injection
     GetContext {
         /// Maximum entries to return
@@ -133,6 +148,13 @@ pub enum Command {
 
     /// Clear all logs
     ClearLogs,
+
+    /// Show memory statistics
+    Stats {
+        /// Tier filter: project, global, both
+        #[arg(default_value = "both", value_parser = parse_tier)]
+        tier: Tier,
+    },
 
     // =========================================================================
     // Session Management Commands
@@ -519,6 +541,104 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // SearchByType command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_search_by_type_minimal() {
+        let cli = Cli::parse_from(["claude-hippocampus", "search-by-type", "gotcha"]);
+        match cli.command {
+            Command::SearchByType {
+                memory_type,
+                query,
+                tier,
+                limit,
+            } => {
+                assert_eq!(memory_type, MemoryType::Gotcha);
+                assert_eq!(query, None);
+                assert_eq!(tier, Tier::Both);
+                assert_eq!(limit, 30);
+            }
+            _ => panic!("Expected SearchByType command"),
+        }
+    }
+
+    #[test]
+    fn test_search_by_type_with_query() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "search-by-type",
+            "learning",
+            "rust async",
+        ]);
+        match cli.command {
+            Command::SearchByType {
+                memory_type,
+                query,
+                ..
+            } => {
+                assert_eq!(memory_type, MemoryType::Learning);
+                assert_eq!(query, Some("rust async".to_string()));
+            }
+            _ => panic!("Expected SearchByType command"),
+        }
+    }
+
+    #[test]
+    fn test_search_by_type_all_args() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "search-by-type",
+            "architecture",
+            "database",
+            "project",
+            "10",
+        ]);
+        match cli.command {
+            Command::SearchByType {
+                memory_type,
+                query,
+                tier,
+                limit,
+            } => {
+                assert_eq!(memory_type, MemoryType::Architecture);
+                assert_eq!(query, Some("database".to_string()));
+                assert_eq!(tier, Tier::Project);
+                assert_eq!(limit, 10);
+            }
+            _ => panic!("Expected SearchByType command"),
+        }
+    }
+
+    #[test]
+    fn test_search_by_type_all_memory_types() {
+        for (type_str, expected) in [
+            ("convention", MemoryType::Convention),
+            ("architecture", MemoryType::Architecture),
+            ("gotcha", MemoryType::Gotcha),
+            ("api", MemoryType::Api),
+            ("learning", MemoryType::Learning),
+            ("preference", MemoryType::Preference),
+        ] {
+            let cli =
+                Cli::parse_from(["claude-hippocampus", "search-by-type", type_str]);
+            match cli.command {
+                Command::SearchByType { memory_type, .. } => {
+                    assert_eq!(memory_type, expected);
+                }
+                _ => panic!("Expected SearchByType command"),
+            }
+        }
+    }
+
+    #[test]
+    fn test_search_by_type_invalid_type_fails() {
+        let result =
+            Cli::try_parse_from(["claude-hippocampus", "search-by-type", "invalid"]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
     // GetContext command tests
     // -------------------------------------------------------------------------
 
@@ -683,6 +803,43 @@ mod tests {
         match cli.command {
             Command::ClearLogs => {}
             _ => panic!("Expected ClearLogs command"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Stats command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_stats_default() {
+        let cli = Cli::parse_from(["claude-hippocampus", "stats"]);
+        match cli.command {
+            Command::Stats { tier } => {
+                assert_eq!(tier, Tier::Both);
+            }
+            _ => panic!("Expected Stats command"),
+        }
+    }
+
+    #[test]
+    fn test_stats_project_tier() {
+        let cli = Cli::parse_from(["claude-hippocampus", "stats", "project"]);
+        match cli.command {
+            Command::Stats { tier } => {
+                assert_eq!(tier, Tier::Project);
+            }
+            _ => panic!("Expected Stats command"),
+        }
+    }
+
+    #[test]
+    fn test_stats_global_tier() {
+        let cli = Cli::parse_from(["claude-hippocampus", "stats", "global"]);
+        match cli.command {
+            Command::Stats { tier } => {
+                assert_eq!(tier, Tier::Global);
+            }
+            _ => panic!("Expected Stats command"),
         }
     }
 

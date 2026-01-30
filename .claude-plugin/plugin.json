@@ -6,5 +6,6 @@
     "name": "Kaipo Chen"
   },
   "repository": "https://github.com/kakapo1933/claude-hippocampus",
-  "agents": "./agents/"
+  "agents": "./agents/",
+  "skills": "./skills/"
 }

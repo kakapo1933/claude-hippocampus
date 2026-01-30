@@ -101,40 +101,11 @@ pub async fn handle_user_prompt_submit(pool: &PgPool, input: &HookInput) -> Resu
         output_text.push_str(&format!(r#"<system-reminder>
 Search memory for context relevant to this prompt.
 
-Use Task tool with subagent_type="memory-helper" to search memory:
+Use Task tool with:
+- subagent_type: "claude-hippocampus:memory-manager"
+- prompt: "Search memory for context relevant to: {}"
 
-**User prompt:** "{}"
-
-**Process:**
-1. Extract 2-4 relevant search keywords from the user prompt
-2. Run keyword searches: `claude-hippocampus search-keyword "<keyword>" both 15`
-3. Merge results from multiple keyword searches
-4. Filter: Remove memories not relevant to the user's question
-5. Rank by semantic relevance to the original prompt
-6. Summarize: Create concise bullet points (max 5, each under 80 chars)
-
-**Output format:**
-```
-╭────────────────────────────── 🧠 Memory Found ───────────────────────────────╮
-│ ★ [type] Key point (id: abc123)                                              │
-│ ◐ [type] Key point (id: def456)                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
-
-If nothing relevant:
-```
-╭────────────────────────────── 🔍 Memory Search ──────────────────────────────╮
-│ No relevant memories found                                                   │
-╰──────────────────────────────────────────────────────────────────────────────╯
-```
-
-Rules:
-- Maximum 5 results
-- Include memory ID in parentheses: (id: xxxx)
-- Use ★ high, ◐ medium, ○ low confidence
-- Only include highly relevant memories
-
-**MANDATORY**: After the memory-helper completes, ALWAYS display the memory box to the user in your response. Do not silently process results - the user wants to see what memories were found.
+**MANDATORY**: Display the agent's memory results to the user.
 </system-reminder>
 
 "#, escaped_prompt));

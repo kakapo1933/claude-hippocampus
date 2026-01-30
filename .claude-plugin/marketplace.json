@@ -1,0 +1,15 @@
+{
+  "name": "claude-hippocampus",
+  "description": "PostgreSQL-backed persistent memory for Claude Code",
+  "owner": {
+    "name": "Kaipo Chen"
+  },
+  "plugins": [
+    {
+      "name": "claude-hippocampus",
+      "source": "..",
+      "description": "PostgreSQL-backed persistent memory with semantic search",
+      "version": "0.1.0"
+    }
+  ]
+}

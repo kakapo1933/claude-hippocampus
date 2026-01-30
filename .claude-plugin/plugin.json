@@ -5,7 +5,5 @@
   "author": {
     "name": "Kaipo Chen"
   },
-  "repository": "https://github.com/kakapo1933/claude-hippocampus",
-  "agents": "agents",
-  "skills": "skills"
+  "repository": "https://github.com/kakapo1933/claude-hippocampus"
 }

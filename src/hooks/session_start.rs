@@ -65,7 +65,7 @@ pub async fn handle_session_start(pool: &PgPool, input: &HookInput) -> Result<Ho
     }
 
     // Load memory context
-    let context_result = get_context(pool, 5, project_path.as_deref()).await?;
+    let context_result = get_context(pool, 10, project_path.as_deref()).await?;
 
     // Build context message from entries
     let mut context_message = String::new();

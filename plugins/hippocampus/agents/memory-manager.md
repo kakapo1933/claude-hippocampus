@@ -34,6 +34,7 @@ tools:
 model: haiku
 skills:
   - brain-cells
+color: green
 ---
 
 You are a memory management specialist for the claude-hippocampus persistent memory system.

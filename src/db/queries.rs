@@ -472,9 +472,8 @@ pub async fn get_context_memories(
         FROM memories
         WHERE scope = 'global' OR (scope = 'project' AND project_path = $2)
         ORDER BY
-          CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
-          access_count DESC,
-          created_at DESC
+          created_at DESC,
+          CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
         LIMIT $1
         "#,
     )

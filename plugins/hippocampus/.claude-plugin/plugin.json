@@ -4,5 +4,7 @@
   "description": "PostgreSQL-backed persistent memory for Claude Code with semantic search",
   "author": {
     "name": "Kaipo Chen"
-  }
+  },
+  "repository": "https://github.com/kakapo1933/claude-hippocampus",
+  "license": "MIT"
 }

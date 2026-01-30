@@ -94,9 +94,9 @@ When injected, memories appear as:
 
 ```markdown
 ╭────────────────────────────── 🧠 Memory Found ───────────────────────────────╮
-│ ★ [gotcha] FAL.ai requires rawUrl not processed URLs (id: abc123)           │
-│ ★ [architecture] Use S3 pre-upload for payloads >1MB (id: def456)           │
-│ ◐ [convention] Project uses camelCase for functions (id: ghi789)            │
+│ ★ [gotcha] FAL.ai requires rawUrl not processed URLs (id: abc123)            │
+│ ★ [architecture] Use S3 pre-upload for payloads >1MB (id: def456)            │
+│ ◐ [convention] Project uses camelCase for functions (id: ghi789)             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ```
 

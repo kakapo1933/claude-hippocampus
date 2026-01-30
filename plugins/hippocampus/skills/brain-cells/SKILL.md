@@ -1,15 +1,19 @@
 ---
-name: memory
-description: PostgreSQL-backed persistent memory with Haiku-powered semantic search
-domain: persistence
-keywords: [memory, remember, recall, learning, decision, gotcha, convention, semantic, hippocampus]
-load_trigger: "remember|recall|memory|learned|decision|correction|gotcha|hippocampus"
-priority: 5
+name: brain-cells
+description: |
+  This skill should be used when the user asks to remember something, recall past learnings,
+  save a decision or gotcha, or search memory for relevant context. Trigger phrases include:
+  "remember this", "save this learning", "what did we learn about", "recall", "check memory for",
+  "any gotchas about", "what was the decision on", "/me:remember", "/me:recall". Also use when
+  the user makes corrections ("actually X", "no, use Y instead") that should be persisted, or
+  when proactively searching for relevant past learnings before implementation.
 ---
 
 # Hippocampus Skill
 
 PostgreSQL-backed persistent memory for Claude Code sessions with Haiku-powered semantic search.
+
+For detailed CLI syntax, see [knowledge/operations.md](knowledge/operations.md).
 
 ---
 
@@ -21,34 +25,6 @@ PostgreSQL-backed persistent memory for Claude Code sessions with Haiku-powered 
 | **Search** | `claude-hippocampus search-keyword` | Search memories |
 | **Context** | `claude-hippocampus get-context` | Get context block |
 | **Stats** | `claude-hippocampus stats` | View statistics |
-
----
-
-## CLI Commands
-
-```bash
-# Core operations
-claude-hippocampus add-memory <type> "<content>" "<tags>" <confidence> <scope>
-claude-hippocampus search-keyword "<query>" [tier] [limit]
-claude-hippocampus search-by-type <type> [keyword] [tier] [limit]
-claude-hippocampus get-context [limit]
-claude-hippocampus get-memory <id>
-claude-hippocampus update-memory <id> "<content>" [tier]
-claude-hippocampus delete-memory <id> [tier]
-
-# Maintenance
-claude-hippocampus consolidate [tier]     # Merge duplicates
-claude-hippocampus prune [days] [tier]    # Remove old low-confidence
-claude-hippocampus list-recent [n] [tier] # View recent entries
-claude-hippocampus stats                  # Show statistics
-
-# Session management
-claude-hippocampus create-session <claude-id> <project-path> [git-status]
-claude-hippocampus get-session <id>
-claude-hippocampus end-session <id> [summary]
-claude-hippocampus create-turn <session-id> <turn-number> "<user-prompt>"
-claude-hippocampus update-turn <turn-id> "<response>" [tokens]
-```
 
 ---
 
@@ -107,7 +83,7 @@ claude-hippocampus update-turn <turn-id> "<response>" [tokens]
 
 ## When to Save Memories
 
-Save to memory when you discover:
+Save to memory upon discovering:
 - User corrections or preferences
 - API quirks or unexpected behavior
 - Project conventions or patterns

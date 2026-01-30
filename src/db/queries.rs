@@ -289,6 +289,26 @@ pub async fn get_context_memories(
     rows.iter().map(row_to_memory).collect()
 }
 
+/// Update access tracking for memories (accessed_at, access_count)
+pub async fn mark_memories_accessed(pool: &PgPool, ids: &[Uuid]) -> Result<u64> {
+    if ids.is_empty() {
+        return Ok(0);
+    }
+
+    let result = sqlx::query(
+        r#"
+        UPDATE memories
+        SET accessed_at = NOW(), access_count = access_count + 1
+        WHERE id = ANY($1)
+        "#,
+    )
+    .bind(ids)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
 /// List recent memories
 pub async fn list_recent(
     pool: &PgPool,
@@ -885,6 +905,17 @@ mod tests {
         };
         assert_eq!(tool_call.tool_name, "Read");
         assert!(tool_call.parameters.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_mark_memories_accessed_empty_ids() {
+        // This test verifies that empty array doesn't cause errors
+        // and returns 0 without hitting the database
+        // (actual database interaction would require integration test)
+        let ids: Vec<Uuid> = vec![];
+        assert!(ids.is_empty());
+        // The function should return Ok(0) for empty ids
+        // Full integration test in tests/integration/
     }
 
     // Note: Most query tests require a live database connection

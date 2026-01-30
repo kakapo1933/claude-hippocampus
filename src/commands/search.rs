@@ -131,6 +131,12 @@ pub async fn search_keyword(pool: &PgPool, options: SearchOptions) -> Result<Sea
     )
     .await?;
 
+    // Mark returned memories as accessed
+    if !memories.is_empty() {
+        let ids: Vec<uuid::Uuid> = memories.iter().map(|m| m.id).collect();
+        queries::mark_memories_accessed(pool, &ids).await?;
+    }
+
     let results: Vec<MemorySearchItem> = memories.into_iter().map(Into::into).collect();
     let count = results.len();
 
@@ -147,6 +153,12 @@ pub async fn get_context(
     project_path: Option<&str>,
 ) -> Result<ContextResult> {
     let memories = queries::get_context_memories(pool, project_path, limit).await?;
+
+    // Mark returned memories as accessed
+    if !memories.is_empty() {
+        let ids: Vec<uuid::Uuid> = memories.iter().map(|m| m.id).collect();
+        queries::mark_memories_accessed(pool, &ids).await?;
+    }
 
     let entries: Vec<MemorySummary> = memories.iter().map(|m| m.to_summary()).collect();
 

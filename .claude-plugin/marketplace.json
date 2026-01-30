@@ -7,7 +7,10 @@
   "plugins": [
     {
       "name": "claude-hippocampus",
-      "source": "..",
+      "source": {
+        "source": "github",
+        "repo": "kakapo1933/claude-hippocampus"
+      },
       "description": "PostgreSQL-backed persistent memory with semantic search",
       "version": "0.1.0"
     }

@@ -8,8 +8,8 @@
     {
       "name": "claude-hippocampus",
       "source": {
-        "source": "github",
-        "repo": "kakapo1933/claude-hippocampus"
+        "source": "url",
+        "url": "https://github.com/kakapo1933/claude-hippocampus.git"
       },
       "description": "PostgreSQL-backed persistent memory with semantic search",
       "version": "0.1.0"

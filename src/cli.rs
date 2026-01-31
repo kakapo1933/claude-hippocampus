@@ -42,6 +42,9 @@ pub enum Command {
         /// Claude session ID (for session state file lookup)
         #[arg(long = "claude-session")]
         claude_session_id: Option<String>,
+        /// ID of memory this supersedes (marks old memory as inactive)
+        #[arg(long = "supersedes")]
+        supersedes: Option<String>,
     },
 
     /// Update an existing memory entry
@@ -121,11 +124,14 @@ pub enum Command {
         tier: Scope,
     },
 
-    /// Remove old low-confidence entries
+    /// Remove old low-confidence entries with tiered retention
     Prune {
-        /// Days threshold (remove entries older than this)
-        #[arg(default_value = "90")]
-        days: i64,
+        /// Days threshold for LOW confidence entries (remove if older than this, access_count=0)
+        #[arg(long = "low-days", default_value = "30")]
+        low_days: i64,
+        /// Days threshold for MEDIUM confidence entries (remove if older than this, access_count=0)
+        #[arg(long = "medium-days", default_value = "90")]
+        medium_days: i64,
         /// Tier: project, global
         #[arg(default_value = "project", value_parser = parse_scope)]
         tier: Scope,
@@ -135,6 +141,52 @@ pub enum Command {
     SaveSessionSummary {
         /// Summary text
         summary: String,
+    },
+
+    // =========================================================================
+    // Supersession Commands
+    // =========================================================================
+
+    /// Show the supersession chain for a memory
+    ShowChain {
+        /// Memory ID (UUID)
+        id: String,
+    },
+
+    /// List superseded (inactive) memories
+    ListSuperseded {
+        /// Tier filter: project, global, both
+        #[arg(default_value = "both", value_parser = parse_tier)]
+        tier: Tier,
+        /// Maximum results to return
+        #[arg(default_value = "50")]
+        limit: i64,
+    },
+
+    /// Purge old superseded memories
+    PurgeSuperseded {
+        /// Days threshold (remove superseded entries older than this)
+        #[arg(default_value = "30")]
+        days: i64,
+        /// Tier: project, global
+        #[arg(default_value = "project", value_parser = parse_scope)]
+        tier: Scope,
+    },
+
+    /// Prune lifecycle data (tool calls, turns, sessions)
+    PruneData {
+        /// Days to keep tool calls (older will be deleted)
+        #[arg(long = "tool-calls-days", default_value = "14")]
+        tool_calls_days: i64,
+        /// Days to keep conversation turns (older will be deleted)
+        #[arg(long = "turns-days", default_value = "30")]
+        turns_days: i64,
+        /// Days to keep sessions (older completed sessions will be deleted)
+        #[arg(long = "sessions-days", default_value = "90")]
+        sessions_days: i64,
+        /// Dry run (show what would be deleted without actually deleting)
+        #[arg(long = "dry-run")]
+        dry_run: bool,
     },
 
     /// View operation logs
@@ -216,6 +268,12 @@ pub enum Command {
         /// Output tokens generated (optional)
         #[arg(long = "output-tokens")]
         output_tokens: Option<i32>,
+    },
+
+    /// Get the current turn number for a session
+    GetTurn {
+        /// Session ID (claude_session_id, required)
+        session_id: String,
     },
 
     // =========================================================================
@@ -300,6 +358,7 @@ mod tests {
                 source_session_id,
                 source_turn_id,
                 claude_session_id,
+                supersedes,
             } => {
                 assert_eq!(memory_type, MemoryType::Learning);
                 assert_eq!(content, "Test content");
@@ -309,6 +368,7 @@ mod tests {
                 assert!(source_session_id.is_none());
                 assert!(source_turn_id.is_none());
                 assert!(claude_session_id.is_none());
+                assert!(supersedes.is_none());
             }
             _ => panic!("Expected AddMemory command"),
         }
@@ -338,6 +398,7 @@ mod tests {
                 source_session_id,
                 source_turn_id,
                 claude_session_id,
+                supersedes,
             } => {
                 assert_eq!(memory_type, MemoryType::Gotcha);
                 assert_eq!(content, "Found a bug");
@@ -347,6 +408,7 @@ mod tests {
                 assert_eq!(source_session_id, Some("sess-123".to_string()));
                 assert_eq!(source_turn_id, Some("turn-456".to_string()));
                 assert_eq!(claude_session_id, Some("claude-789".to_string()));
+                assert!(supersedes.is_none());
             }
             _ => panic!("Expected AddMemory command"),
         }
@@ -726,8 +788,9 @@ mod tests {
     fn test_prune_default() {
         let cli = Cli::parse_from(["claude-hippocampus", "prune"]);
         match cli.command {
-            Command::Prune { days, tier } => {
-                assert_eq!(days, 90);
+            Command::Prune { low_days, medium_days, tier } => {
+                assert_eq!(low_days, 30);
+                assert_eq!(medium_days, 90);
                 assert_eq!(tier, Scope::Project);
             }
             _ => panic!("Expected Prune command"),
@@ -736,10 +799,17 @@ mod tests {
 
     #[test]
     fn test_prune_with_args() {
-        let cli = Cli::parse_from(["claude-hippocampus", "prune", "30", "global"]);
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "prune",
+            "--low-days=14",
+            "--medium-days=60",
+            "global",
+        ]);
         match cli.command {
-            Command::Prune { days, tier } => {
-                assert_eq!(days, 30);
+            Command::Prune { low_days, medium_days, tier } => {
+                assert_eq!(low_days, 14);
+                assert_eq!(medium_days, 60);
                 assert_eq!(tier, Scope::Global);
             }
             _ => panic!("Expected Prune command"),
@@ -1172,6 +1242,31 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // GetTurn command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_get_turn() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "get-turn",
+            "abc-123-def",
+        ]);
+        match cli.command {
+            Command::GetTurn { session_id } => {
+                assert_eq!(session_id, "abc-123-def");
+            }
+            _ => panic!("Expected GetTurn command"),
+        }
+    }
+
+    #[test]
+    fn test_get_turn_missing_session_id_fails() {
+        let result = Cli::try_parse_from(["claude-hippocampus", "get-turn"]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
     // Hook command tests
     // -------------------------------------------------------------------------
 
@@ -1240,6 +1335,189 @@ mod tests {
     fn test_hook_invalid_type_fails() {
         let result = Cli::try_parse_from(["claude-hippocampus", "hook", "invalid-hook"]);
         assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // ShowChain command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_show_chain() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "show-chain",
+            "550e8400-e29b-41d4-a716-446655440000",
+        ]);
+        match cli.command {
+            Command::ShowChain { id } => {
+                assert_eq!(id, "550e8400-e29b-41d4-a716-446655440000");
+            }
+            _ => panic!("Expected ShowChain command"),
+        }
+    }
+
+    #[test]
+    fn test_show_chain_missing_id_fails() {
+        let result = Cli::try_parse_from(["claude-hippocampus", "show-chain"]);
+        assert!(result.is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // ListSuperseded command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_list_superseded_default() {
+        let cli = Cli::parse_from(["claude-hippocampus", "list-superseded"]);
+        match cli.command {
+            Command::ListSuperseded { tier, limit } => {
+                assert_eq!(tier, Tier::Both);
+                assert_eq!(limit, 50);
+            }
+            _ => panic!("Expected ListSuperseded command"),
+        }
+    }
+
+    #[test]
+    fn test_list_superseded_with_args() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "list-superseded",
+            "project",
+            "10",
+        ]);
+        match cli.command {
+            Command::ListSuperseded { tier, limit } => {
+                assert_eq!(tier, Tier::Project);
+                assert_eq!(limit, 10);
+            }
+            _ => panic!("Expected ListSuperseded command"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // PurgeSuperseded command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_purge_superseded_default() {
+        let cli = Cli::parse_from(["claude-hippocampus", "purge-superseded"]);
+        match cli.command {
+            Command::PurgeSuperseded { days, tier } => {
+                assert_eq!(days, 30);
+                assert_eq!(tier, Scope::Project);
+            }
+            _ => panic!("Expected PurgeSuperseded command"),
+        }
+    }
+
+    #[test]
+    fn test_purge_superseded_with_args() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "purge-superseded",
+            "60",
+            "global",
+        ]);
+        match cli.command {
+            Command::PurgeSuperseded { days, tier } => {
+                assert_eq!(days, 60);
+                assert_eq!(tier, Scope::Global);
+            }
+            _ => panic!("Expected PurgeSuperseded command"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // PruneData command tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_prune_data_default() {
+        let cli = Cli::parse_from(["claude-hippocampus", "prune-data"]);
+        match cli.command {
+            Command::PruneData {
+                tool_calls_days,
+                turns_days,
+                sessions_days,
+                dry_run,
+            } => {
+                assert_eq!(tool_calls_days, 14);
+                assert_eq!(turns_days, 30);
+                assert_eq!(sessions_days, 90);
+                assert!(!dry_run);
+            }
+            _ => panic!("Expected PruneData command"),
+        }
+    }
+
+    #[test]
+    fn test_prune_data_with_args() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "prune-data",
+            "--tool-calls-days=7",
+            "--turns-days=14",
+            "--sessions-days=30",
+            "--dry-run",
+        ]);
+        match cli.command {
+            Command::PruneData {
+                tool_calls_days,
+                turns_days,
+                sessions_days,
+                dry_run,
+            } => {
+                assert_eq!(tool_calls_days, 7);
+                assert_eq!(turns_days, 14);
+                assert_eq!(sessions_days, 30);
+                assert!(dry_run);
+            }
+            _ => panic!("Expected PruneData command"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // AddMemory with supersedes tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_add_memory_with_supersedes() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "add-memory",
+            "learning",
+            "New content",
+            "",
+            "high",
+            "project",
+            "--supersedes=550e8400-e29b-41d4-a716-446655440000",
+        ]);
+        match cli.command {
+            Command::AddMemory { supersedes, .. } => {
+                assert_eq!(
+                    supersedes,
+                    Some("550e8400-e29b-41d4-a716-446655440000".to_string())
+                );
+            }
+            _ => panic!("Expected AddMemory command"),
+        }
+    }
+
+    #[test]
+    fn test_add_memory_without_supersedes() {
+        let cli = Cli::parse_from([
+            "claude-hippocampus",
+            "add-memory",
+            "learning",
+            "New content",
+        ]);
+        match cli.command {
+            Command::AddMemory { supersedes, .. } => {
+                assert!(supersedes.is_none());
+            }
+            _ => panic!("Expected AddMemory command"),
+        }
     }
 }
 

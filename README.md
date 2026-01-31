@@ -83,7 +83,17 @@ claude-hippocampus get-memory <uuid>
 
 # Maintenance
 claude-hippocampus consolidate project  # Remove duplicates
-claude-hippocampus prune 90 project     # Remove old low-confidence entries
+claude-hippocampus prune --low-days=30 --medium-days=90 project  # Tiered retention
+
+# Supersession management
+claude-hippocampus add-memory learning "New info" --supersedes=<old-id>  # Replace memory
+claude-hippocampus show-chain <memory-id>         # Show supersession chain
+claude-hippocampus list-superseded both 50        # List inactive memories
+claude-hippocampus purge-superseded 30 project    # Delete old superseded
+
+# Lifecycle data cleanup
+claude-hippocampus prune-data --tool-calls-days=14 --turns-days=30 --sessions-days=90
+claude-hippocampus prune-data --dry-run           # Preview what would be deleted
 
 # View logs
 claude-hippocampus logs 50
@@ -150,11 +160,11 @@ All hooks read JSON from stdin and output JSON with `decision` and optional `rea
 
 ### Confidence Levels
 
-| Level | Symbol | Description |
-|-------|--------|-------------|
-| `high` | ★ | Verified, critical information |
-| `medium` | ◐ | Likely correct, moderate importance |
-| `low` | ○ | Uncertain or low priority |
+| Level | Symbol | Description | Retention |
+|-------|--------|-------------|-----------|
+| `high` | ★ | Verified, critical information | Never pruned |
+| `medium` | ◐ | Likely correct, moderate importance | Pruned after 90 days (if never accessed) |
+| `low` | ○ | Uncertain or low priority | Pruned after 30 days (if never accessed) |
 
 ### Tiers
 
@@ -306,10 +316,27 @@ CREATE INDEX idx_memories_scope ON memories(scope);
 CREATE INDEX idx_memories_project ON memories(project_path);
 CREATE INDEX idx_memories_confidence ON memories(confidence);
 CREATE INDEX idx_memories_created ON memories(created_at DESC);
+CREATE INDEX idx_memories_is_active ON memories(is_active);
+CREATE INDEX idx_memories_superseded_by ON memories(superseded_by);
 CREATE INDEX idx_sessions_claude_id ON sessions(claude_session_id);
 CREATE INDEX idx_turns_session ON conversation_turns(session_id);
 CREATE INDEX idx_tool_calls_session ON tool_calls(session_id);
 CREATE INDEX idx_tool_calls_turn ON tool_calls(turn_id);
+```
+
+### Schema Migration (v2 - Retention Policy)
+
+If upgrading from an earlier version, apply this migration:
+
+```sql
+-- Add supersession tracking and active status fields
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS superseded_by UUID REFERENCES memories(id);
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ;
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true;
+
+-- Add indexes for the new fields
+CREATE INDEX IF NOT EXISTS idx_memories_is_active ON memories(is_active);
+CREATE INDEX IF NOT EXISTS idx_memories_superseded_by ON memories(superseded_by);
 ```
 
 ## JSON Output Examples

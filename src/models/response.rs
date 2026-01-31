@@ -148,6 +148,17 @@ pub struct PruneData {
     pub pruned_ids: Vec<Uuid>,
 }
 
+/// Response for tiered prune operation (low/medium confidence)
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TieredPruneData {
+    pub low_pruned: usize,
+    pub low_pruned_ids: Vec<Uuid>,
+    pub medium_pruned: usize,
+    pub medium_pruned_ids: Vec<Uuid>,
+    pub total_pruned: usize,
+}
+
 /// Response for session summary save
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +192,59 @@ pub struct LogsData {
 #[derive(Debug, Serialize)]
 pub struct ClearLogsData {
     pub cleared: bool,
+}
+
+// ============================================================================
+// Supersession Responses
+// ============================================================================
+
+use chrono::{DateTime, Utc};
+
+/// Data for showing a memory's supersession chain
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChainData {
+    /// The memory itself
+    pub memory: MemorySummary,
+    /// Memories that this one superseded (predecessors)
+    pub predecessors: Vec<MemorySummary>,
+    /// Memories that superseded this one (successors)
+    pub successors: Vec<MemorySummary>,
+}
+
+/// A superseded memory with its replacement info
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SupersededMemory {
+    pub memory: MemorySummary,
+    pub superseded_by_id: Uuid,
+    pub superseded_at: DateTime<Utc>,
+}
+
+/// Response for listing superseded memories
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSupersededData {
+    pub entries: Vec<SupersededMemory>,
+    pub count: usize,
+}
+
+/// Response for purging superseded memories
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PurgeSupersededData {
+    pub purged: usize,
+    pub purged_ids: Vec<Uuid>,
+}
+
+/// Response for lifecycle data pruning
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PruneDataResult {
+    pub tool_calls_pruned: usize,
+    pub turns_pruned: usize,
+    pub sessions_pruned: usize,
+    pub dry_run: bool,
 }
 
 // ============================================================================
@@ -240,6 +304,9 @@ mod tests {
             confidence: Confidence::High,
             created: Utc::now(),
             access_count: 5,
+            superseded_by: None,
+            superseded_at: None,
+            is_active: true,
         };
 
         let data = SearchResultData {

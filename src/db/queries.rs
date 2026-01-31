@@ -147,7 +147,7 @@ pub async fn get_memory(pool: &PgPool, id: Uuid) -> Result<Option<Memory>> {
         r#"
         SELECT id, type, scope, project_path, content, tags, confidence,
                source_session_id, source_turn_id, created_at, updated_at,
-               accessed_at, access_count
+               accessed_at, access_count, superseded_by, superseded_at, is_active
         FROM memories
         WHERE id = $1
         "#,
@@ -180,9 +180,10 @@ pub async fn search_keyword(
             r#"
             SELECT id, type, scope, project_path, content, tags, confidence,
                    source_session_id, source_turn_id, created_at, updated_at,
-                   accessed_at, access_count
+                   accessed_at, access_count, superseded_by, superseded_at, is_active
             FROM memories
-            WHERE (scope = 'global' OR (scope = 'project' AND project_path = $3))
+            WHERE is_active = true
+              AND (scope = 'global' OR (scope = 'project' AND project_path = $3))
               AND (content ILIKE $1 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $1))
             ORDER BY
               CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -202,9 +203,10 @@ pub async fn search_keyword(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE scope = 'project' AND project_path = $3
+                WHERE is_active = true
+                  AND scope = 'project' AND project_path = $3
                   AND (content ILIKE $1 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $1))
                 ORDER BY
                   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -222,9 +224,10 @@ pub async fn search_keyword(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE scope = 'global'
+                WHERE is_active = true
+                  AND scope = 'global'
                   AND (content ILIKE $1 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $1))
                 ORDER BY
                   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -243,9 +246,10 @@ pub async fn search_keyword(
             r#"
             SELECT id, type, scope, project_path, content, tags, confidence,
                    source_session_id, source_turn_id, created_at, updated_at,
-                   accessed_at, access_count
+                   accessed_at, access_count, superseded_by, superseded_at, is_active
             FROM memories
-            WHERE content ILIKE $1 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $1)
+            WHERE is_active = true
+              AND (content ILIKE $1 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $1))
             ORDER BY
               CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
               created_at DESC
@@ -281,9 +285,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                   AND (scope = 'global' OR (scope = 'project' AND project_path = $4))
                   AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
                 ORDER BY
@@ -305,9 +310,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                   AND (scope = 'global' OR (scope = 'project' AND project_path = $3))
                 ORDER BY
                   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -327,9 +333,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                   AND scope = 'project' AND project_path = $4
                   AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
                 ORDER BY
@@ -351,9 +358,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                   AND scope = 'project' AND project_path = $3
                 ORDER BY
                   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -373,9 +381,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                   AND scope = 'global'
                   AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
                 ORDER BY
@@ -396,9 +405,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                   AND scope = 'global'
                 ORDER BY
                   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -417,9 +427,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                   AND (content ILIKE $2 OR EXISTS (SELECT 1 FROM unnest(tags) AS t WHERE t ILIKE $2))
                 ORDER BY
                   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -439,9 +450,10 @@ pub async fn search_by_type(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE type = $1
+                WHERE is_active = true
+                  AND type = $1
                 ORDER BY
                   CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
                   created_at DESC
@@ -468,9 +480,10 @@ pub async fn get_context_memories(
         r#"
         SELECT id, type, scope, project_path, content, tags, confidence,
                source_session_id, source_turn_id, created_at, updated_at,
-               accessed_at, access_count
+               accessed_at, access_count, superseded_by, superseded_at, is_active
         FROM memories
-        WHERE scope = 'global' OR (scope = 'project' AND project_path = $2)
+        WHERE is_active = true
+          AND (scope = 'global' OR (scope = 'project' AND project_path = $2))
         ORDER BY
           created_at DESC,
           CASE confidence WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
@@ -666,12 +679,13 @@ pub async fn list_recent(
     include_both_scopes: bool,
     limit: i32,
 ) -> Result<(Vec<Memory>, i64)> {
-    // Get total count
+    // Get total count (only active memories)
     let total: i64 = if include_both_scopes {
         sqlx::query_scalar(
             r#"
             SELECT COUNT(*) FROM memories
-            WHERE scope = 'global' OR (scope = 'project' AND project_path = $1)
+            WHERE is_active = true
+              AND (scope = 'global' OR (scope = 'project' AND project_path = $1))
             "#,
         )
         .bind(project_path)
@@ -680,31 +694,32 @@ pub async fn list_recent(
     } else if let Some(scope) = scope_filter {
         if scope == Scope::Project {
             sqlx::query_scalar(
-                r#"SELECT COUNT(*) FROM memories WHERE scope = 'project' AND project_path = $1"#,
+                r#"SELECT COUNT(*) FROM memories WHERE is_active = true AND scope = 'project' AND project_path = $1"#,
             )
             .bind(project_path)
             .fetch_one(pool)
             .await?
         } else {
-            sqlx::query_scalar(r#"SELECT COUNT(*) FROM memories WHERE scope = 'global'"#)
+            sqlx::query_scalar(r#"SELECT COUNT(*) FROM memories WHERE is_active = true AND scope = 'global'"#)
                 .fetch_one(pool)
                 .await?
         }
     } else {
-        sqlx::query_scalar(r#"SELECT COUNT(*) FROM memories"#)
+        sqlx::query_scalar(r#"SELECT COUNT(*) FROM memories WHERE is_active = true"#)
             .fetch_one(pool)
             .await?
     };
 
-    // Get recent entries
+    // Get recent entries (only active memories)
     let rows = if include_both_scopes {
         sqlx::query(
             r#"
             SELECT id, type, scope, project_path, content, tags, confidence,
                    source_session_id, source_turn_id, created_at, updated_at,
-                   accessed_at, access_count
+                   accessed_at, access_count, superseded_by, superseded_at, is_active
             FROM memories
-            WHERE scope = 'global' OR (scope = 'project' AND project_path = $2)
+            WHERE is_active = true
+              AND (scope = 'global' OR (scope = 'project' AND project_path = $2))
             ORDER BY created_at DESC
             LIMIT $1
             "#,
@@ -719,9 +734,10 @@ pub async fn list_recent(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE scope = 'project' AND project_path = $2
+                WHERE is_active = true
+                  AND scope = 'project' AND project_path = $2
                 ORDER BY created_at DESC
                 LIMIT $1
                 "#,
@@ -735,9 +751,10 @@ pub async fn list_recent(
                 r#"
                 SELECT id, type, scope, project_path, content, tags, confidence,
                        source_session_id, source_turn_id, created_at, updated_at,
-                       accessed_at, access_count
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
                 FROM memories
-                WHERE scope = 'global'
+                WHERE is_active = true
+                  AND scope = 'global'
                 ORDER BY created_at DESC
                 LIMIT $1
                 "#,
@@ -751,8 +768,9 @@ pub async fn list_recent(
             r#"
             SELECT id, type, scope, project_path, content, tags, confidence,
                    source_session_id, source_turn_id, created_at, updated_at,
-                   accessed_at, access_count
+                   accessed_at, access_count, superseded_by, superseded_at, is_active
             FROM memories
+            WHERE is_active = true
             ORDER BY created_at DESC
             LIMIT $1
             "#,
@@ -827,21 +845,337 @@ pub async fn consolidate_duplicates(
     Ok(duplicate_ids)
 }
 
-/// Prune old low-confidence memories
-pub async fn prune_old_memories(
+/// Prune old memories with tiered retention policy
+/// - LOW confidence: pruned after `low_days` days with access_count=0 and is_active=true
+/// - MEDIUM confidence: pruned after `medium_days` days with access_count=0, is_active=true, not superseded
+/// - HIGH confidence: never pruned
+pub async fn prune_old_memories_tiered(
     pool: &PgPool,
-    days: i32,
+    low_days: i32,
+    medium_days: i32,
     scope_filter: Option<Scope>,
     project_path: Option<&str>,
-) -> Result<Vec<Uuid>> {
-    let pruned_rows = if let Some(scope) = scope_filter {
+) -> Result<(Vec<Uuid>, Vec<Uuid>)> {
+    // Prune LOW confidence memories
+    let low_pruned = if let Some(scope) = scope_filter {
         if scope == Scope::Project {
             sqlx::query(
                 r#"
                 DELETE FROM memories
                 WHERE confidence = 'low'
                   AND access_count = 0
+                  AND is_active = true
                   AND created_at < NOW() - INTERVAL '1 day' * $1
+                  AND scope = 'project'
+                  AND project_path = $2
+                RETURNING id
+                "#,
+            )
+            .bind(low_days)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query(
+                r#"
+                DELETE FROM memories
+                WHERE confidence = 'low'
+                  AND access_count = 0
+                  AND is_active = true
+                  AND created_at < NOW() - INTERVAL '1 day' * $1
+                  AND scope = 'global'
+                RETURNING id
+                "#,
+            )
+            .bind(low_days)
+            .fetch_all(pool)
+            .await?
+        }
+    } else {
+        sqlx::query(
+            r#"
+            DELETE FROM memories
+            WHERE confidence = 'low'
+              AND access_count = 0
+              AND is_active = true
+              AND created_at < NOW() - INTERVAL '1 day' * $1
+            RETURNING id
+            "#,
+        )
+        .bind(low_days)
+        .fetch_all(pool)
+        .await?
+    };
+
+    // Prune MEDIUM confidence memories (only if not superseded)
+    let medium_pruned = if let Some(scope) = scope_filter {
+        if scope == Scope::Project {
+            sqlx::query(
+                r#"
+                DELETE FROM memories
+                WHERE confidence = 'medium'
+                  AND access_count = 0
+                  AND is_active = true
+                  AND superseded_by IS NULL
+                  AND created_at < NOW() - INTERVAL '1 day' * $1
+                  AND scope = 'project'
+                  AND project_path = $2
+                RETURNING id
+                "#,
+            )
+            .bind(medium_days)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        } else {
+            sqlx::query(
+                r#"
+                DELETE FROM memories
+                WHERE confidence = 'medium'
+                  AND access_count = 0
+                  AND is_active = true
+                  AND superseded_by IS NULL
+                  AND created_at < NOW() - INTERVAL '1 day' * $1
+                  AND scope = 'global'
+                RETURNING id
+                "#,
+            )
+            .bind(medium_days)
+            .fetch_all(pool)
+            .await?
+        }
+    } else {
+        sqlx::query(
+            r#"
+            DELETE FROM memories
+            WHERE confidence = 'medium'
+              AND access_count = 0
+              AND is_active = true
+              AND superseded_by IS NULL
+              AND created_at < NOW() - INTERVAL '1 day' * $1
+            RETURNING id
+            "#,
+        )
+        .bind(medium_days)
+        .fetch_all(pool)
+        .await?
+    };
+
+    Ok((
+        low_pruned.iter().map(|r| r.get("id")).collect(),
+        medium_pruned.iter().map(|r| r.get("id")).collect(),
+    ))
+}
+
+// ============================================================================
+// Supersession Queries
+// ============================================================================
+
+use crate::models::MemorySummary;
+
+/// Mark an old memory as superseded by a new one
+pub async fn supersede_memory(pool: &PgPool, old_id: Uuid, new_id: Uuid) -> Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE memories
+        SET superseded_by = $2, superseded_at = NOW(), is_active = false
+        WHERE id = $1
+        "#,
+    )
+    .bind(old_id)
+    .bind(new_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+/// Result of showing a memory's supersession chain
+#[derive(Debug)]
+pub struct ChainResult {
+    pub memory: MemorySummary,
+    pub predecessors: Vec<MemorySummary>,
+    pub successors: Vec<MemorySummary>,
+}
+
+/// Show the supersession chain for a memory
+pub async fn show_chain(pool: &PgPool, memory_id: Uuid) -> Result<ChainResult> {
+    // Get the memory itself
+    let memory = get_memory(pool, memory_id)
+        .await?
+        .ok_or_else(|| HippocampusError::NotFound(format!("Memory not found: {}", memory_id)))?;
+
+    // Find predecessors (memories that this one superseded - traverse back)
+    let predecessor_rows = sqlx::query(
+        r#"
+        WITH RECURSIVE chain AS (
+            SELECT id, superseded_by, superseded_at
+            FROM memories
+            WHERE superseded_by = $1
+            UNION ALL
+            SELECT m.id, m.superseded_by, m.superseded_at
+            FROM memories m
+            INNER JOIN chain c ON m.superseded_by = c.id
+        )
+        SELECT id FROM chain
+        "#,
+    )
+    .bind(memory_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut predecessors = Vec::new();
+    for row in predecessor_rows {
+        let id: Uuid = row.get("id");
+        if let Some(mem) = get_memory(pool, id).await? {
+            predecessors.push(mem.to_summary());
+        }
+    }
+
+    // Find successors (memories that superseded this one - traverse forward)
+    let successor_rows = sqlx::query(
+        r#"
+        WITH RECURSIVE chain AS (
+            SELECT id, superseded_by
+            FROM memories
+            WHERE id = (SELECT superseded_by FROM memories WHERE id = $1)
+            UNION ALL
+            SELECT m.id, m.superseded_by
+            FROM memories m
+            INNER JOIN chain c ON m.id = (SELECT superseded_by FROM memories WHERE id = c.id)
+            WHERE m.id IS NOT NULL
+        )
+        SELECT id FROM chain WHERE id IS NOT NULL
+        "#,
+    )
+    .bind(memory_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut successors = Vec::new();
+    for row in successor_rows {
+        let id: Uuid = row.get("id");
+        if let Some(mem) = get_memory(pool, id).await? {
+            successors.push(mem.to_summary());
+        }
+    }
+
+    Ok(ChainResult {
+        memory: memory.to_summary(),
+        predecessors,
+        successors,
+    })
+}
+
+/// Information about a superseded memory
+#[derive(Debug)]
+pub struct SupersededMemoryInfo {
+    pub memory: MemorySummary,
+    pub superseded_by_id: Uuid,
+    pub superseded_at: chrono::DateTime<chrono::Utc>,
+}
+
+/// List superseded (inactive) memories
+pub async fn list_superseded(
+    pool: &PgPool,
+    tier: crate::models::Tier,
+    limit: i64,
+    project_path: Option<&str>,
+) -> Result<Vec<SupersededMemoryInfo>> {
+    use crate::models::Tier;
+
+    let rows = match tier {
+        Tier::Both => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
+                FROM memories
+                WHERE is_active = false
+                  AND superseded_by IS NOT NULL
+                  AND (scope = 'global' OR (scope = 'project' AND project_path = $2))
+                ORDER BY superseded_at DESC
+                LIMIT $1
+                "#,
+            )
+            .bind(limit)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        }
+        Tier::Project => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
+                FROM memories
+                WHERE is_active = false
+                  AND superseded_by IS NOT NULL
+                  AND scope = 'project'
+                  AND project_path = $2
+                ORDER BY superseded_at DESC
+                LIMIT $1
+                "#,
+            )
+            .bind(limit)
+            .bind(project_path)
+            .fetch_all(pool)
+            .await?
+        }
+        Tier::Global => {
+            sqlx::query(
+                r#"
+                SELECT id, type, scope, project_path, content, tags, confidence,
+                       source_session_id, source_turn_id, created_at, updated_at,
+                       accessed_at, access_count, superseded_by, superseded_at, is_active
+                FROM memories
+                WHERE is_active = false
+                  AND superseded_by IS NOT NULL
+                  AND scope = 'global'
+                ORDER BY superseded_at DESC
+                LIMIT $1
+                "#,
+            )
+            .bind(limit)
+            .fetch_all(pool)
+            .await?
+        }
+    };
+
+    let mut result = Vec::new();
+    for row in rows {
+        let memory = row_to_memory(&row)?;
+        if let (Some(superseded_by), Some(superseded_at)) =
+            (memory.superseded_by, memory.superseded_at)
+        {
+            result.push(SupersededMemoryInfo {
+                memory: memory.to_summary(),
+                superseded_by_id: superseded_by,
+                superseded_at,
+            });
+        }
+    }
+
+    Ok(result)
+}
+
+/// Purge old superseded memories
+pub async fn purge_superseded(
+    pool: &PgPool,
+    days: i32,
+    scope_filter: Option<Scope>,
+    project_path: Option<&str>,
+) -> Result<Vec<Uuid>> {
+    let purged_rows = if let Some(scope) = scope_filter {
+        if scope == Scope::Project {
+            sqlx::query(
+                r#"
+                DELETE FROM memories
+                WHERE is_active = false
+                  AND superseded_at IS NOT NULL
+                  AND superseded_at < NOW() - INTERVAL '1 day' * $1
                   AND scope = 'project'
                   AND project_path = $2
                 RETURNING id
@@ -855,9 +1189,9 @@ pub async fn prune_old_memories(
             sqlx::query(
                 r#"
                 DELETE FROM memories
-                WHERE confidence = 'low'
-                  AND access_count = 0
-                  AND created_at < NOW() - INTERVAL '1 day' * $1
+                WHERE is_active = false
+                  AND superseded_at IS NOT NULL
+                  AND superseded_at < NOW() - INTERVAL '1 day' * $1
                   AND scope = 'global'
                 RETURNING id
                 "#,
@@ -870,9 +1204,9 @@ pub async fn prune_old_memories(
         sqlx::query(
             r#"
             DELETE FROM memories
-            WHERE confidence = 'low'
-              AND access_count = 0
-              AND created_at < NOW() - INTERVAL '1 day' * $1
+            WHERE is_active = false
+              AND superseded_at IS NOT NULL
+              AND superseded_at < NOW() - INTERVAL '1 day' * $1
             RETURNING id
             "#,
         )
@@ -881,7 +1215,106 @@ pub async fn prune_old_memories(
         .await?
     };
 
-    Ok(pruned_rows.iter().map(|r| r.get("id")).collect())
+    Ok(purged_rows.iter().map(|r| r.get("id")).collect())
+}
+
+// ============================================================================
+// Lifecycle Data Pruning
+// ============================================================================
+
+/// Result of lifecycle data pruning
+#[derive(Debug)]
+pub struct LifecyclePruneResult {
+    pub tool_calls_pruned: usize,
+    pub turns_pruned: usize,
+    pub sessions_pruned: usize,
+}
+
+/// Prune lifecycle data (tool calls, turns, sessions)
+pub async fn prune_lifecycle_data(
+    pool: &PgPool,
+    tool_calls_days: i32,
+    turns_days: i32,
+    sessions_days: i32,
+    dry_run: bool,
+) -> Result<LifecyclePruneResult> {
+    if dry_run {
+        // Just count what would be deleted
+        let tool_calls_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM tool_calls
+            WHERE called_at < NOW() - INTERVAL '1 day' * $1
+            "#,
+        )
+        .bind(tool_calls_days)
+        .fetch_one(pool)
+        .await?;
+
+        let turns_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM conversation_turns
+            WHERE created_at < NOW() - INTERVAL '1 day' * $1
+            "#,
+        )
+        .bind(turns_days)
+        .fetch_one(pool)
+        .await?;
+
+        let sessions_count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*) FROM sessions
+            WHERE status = 'completed'
+              AND ended_at < NOW() - INTERVAL '1 day' * $1
+            "#,
+        )
+        .bind(sessions_days)
+        .fetch_one(pool)
+        .await?;
+
+        return Ok(LifecyclePruneResult {
+            tool_calls_pruned: tool_calls_count as usize,
+            turns_pruned: turns_count as usize,
+            sessions_pruned: sessions_count as usize,
+        });
+    }
+
+    // Actually delete the data
+    let tool_calls_result = sqlx::query(
+        r#"
+        DELETE FROM tool_calls
+        WHERE called_at < NOW() - INTERVAL '1 day' * $1
+        "#,
+    )
+    .bind(tool_calls_days)
+    .execute(pool)
+    .await?;
+
+    let turns_result = sqlx::query(
+        r#"
+        DELETE FROM conversation_turns
+        WHERE created_at < NOW() - INTERVAL '1 day' * $1
+        "#,
+    )
+    .bind(turns_days)
+    .execute(pool)
+    .await?;
+
+    let sessions_result = sqlx::query(
+        r#"
+        DELETE FROM sessions
+        WHERE status = 'completed'
+          AND ended_at < NOW() - INTERVAL '1 day' * $1
+        "#,
+    )
+    .bind(sessions_days)
+    .execute(pool)
+    .await?;
+
+    Ok(LifecyclePruneResult {
+        tool_calls_pruned: tool_calls_result.rows_affected() as usize,
+        turns_pruned: turns_result.rows_affected() as usize,
+        sessions_pruned: sessions_result.rows_affected() as usize,
+    })
 }
 
 /// Save session summary
@@ -1168,6 +1601,9 @@ fn row_to_memory(row: &sqlx::postgres::PgRow) -> Result<Memory> {
         updated_at: row.get("updated_at"),
         accessed_at: row.get("accessed_at"),
         access_count: row.get("access_count"),
+        superseded_by: row.get("superseded_by"),
+        superseded_at: row.get("superseded_at"),
+        is_active: row.get("is_active"),
     })
 }
 

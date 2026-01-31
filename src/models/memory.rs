@@ -194,6 +194,17 @@ pub struct Memory {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accessed_at: Option<DateTime<Utc>>,
     pub access_count: i32,
+    // Supersession tracking fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_at: Option<DateTime<Utc>>,
+    #[serde(default = "default_is_active")]
+    pub is_active: bool,
+}
+
+fn default_is_active() -> bool {
+    true
 }
 
 /// Summary view of a memory (for list/search results)
@@ -209,6 +220,13 @@ pub struct MemorySummary {
     pub confidence: Confidence,
     pub created: DateTime<Utc>,
     pub access_count: i32,
+    // Supersession tracking fields
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_by: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub superseded_at: Option<DateTime<Utc>>,
+    #[serde(default = "default_is_active")]
+    pub is_active: bool,
 }
 
 impl Memory {
@@ -229,6 +247,9 @@ impl Memory {
             confidence: self.confidence,
             created: self.created_at,
             access_count: self.access_count,
+            superseded_by: self.superseded_by,
+            superseded_at: self.superseded_at,
+            is_active: self.is_active,
         }
     }
 }
@@ -434,12 +455,17 @@ mod tests {
             updated_at: Utc::now(),
             accessed_at: None,
             access_count: 0,
+            superseded_by: None,
+            superseded_at: None,
+            is_active: true,
         };
 
         let summary = memory.to_summary();
         assert_eq!(summary.summary, "Short content");
         assert_eq!(summary.memory_type, MemoryType::Learning);
         assert_eq!(summary.confidence, Confidence::High);
+        assert!(summary.is_active);
+        assert!(summary.superseded_by.is_none());
     }
 
     #[test]
@@ -459,6 +485,9 @@ mod tests {
             updated_at: Utc::now(),
             accessed_at: None,
             access_count: 5,
+            superseded_by: None,
+            superseded_at: None,
+            is_active: true,
         };
 
         let summary = memory.to_summary();
@@ -486,11 +515,45 @@ mod tests {
                 .with_timezone(&Utc),
             accessed_at: None,
             access_count: 0,
+            superseded_by: None,
+            superseded_at: None,
+            is_active: true,
         };
 
         let json = serde_json::to_string(&memory).unwrap();
         assert!(json.contains("\"type\":\"api\"")); // renamed field
         assert!(json.contains("\"projectPath\"")); // camelCase conversion
         assert!(json.contains("\"accessCount\":0")); // camelCase conversion
+        assert!(json.contains("\"isActive\":true")); // new field
+    }
+
+    #[test]
+    fn test_memory_with_supersession_fields() {
+        let superseding_id = Uuid::new_v4();
+        let superseded_time = Utc::now();
+
+        let memory = Memory {
+            id: Uuid::new_v4(),
+            memory_type: MemoryType::Learning,
+            scope: Scope::Project,
+            project_path: None,
+            content: "Old learning".to_string(),
+            tags: vec![],
+            confidence: Confidence::Medium,
+            source_session_id: None,
+            source_turn_id: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            accessed_at: None,
+            access_count: 0,
+            superseded_by: Some(superseding_id),
+            superseded_at: Some(superseded_time),
+            is_active: false,
+        };
+
+        let summary = memory.to_summary();
+        assert!(!summary.is_active);
+        assert_eq!(summary.superseded_by, Some(superseding_id));
+        assert!(summary.superseded_at.is_some());
     }
 }

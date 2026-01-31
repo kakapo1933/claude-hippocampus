@@ -328,6 +328,9 @@ mod tests {
             updated_at: Utc::now(),
             accessed_at: None,
             access_count: 5,
+            superseded_by: None,
+            superseded_at: None,
+            is_active: true,
         };
 
         let item: MemorySearchItem = memory.into();
@@ -356,6 +359,9 @@ mod tests {
             updated_at: Utc::now(),
             accessed_at: Some(Utc::now()),
             access_count: 0,
+            superseded_by: None,
+            superseded_at: None,
+            is_active: true,
         };
 
         let item: MemorySearchItem = memory.into();
@@ -416,6 +422,9 @@ mod tests {
                 confidence: Confidence::High,
                 created: Utc::now(),
                 access_count: 0,
+                superseded_by: None,
+                superseded_at: None,
+                is_active: true,
             },
             MemorySummary {
                 id: Uuid::new_v4(),
@@ -426,6 +435,9 @@ mod tests {
                 confidence: Confidence::Medium,
                 created: Utc::now(),
                 access_count: 0,
+                superseded_by: None,
+                superseded_at: None,
+                is_active: true,
             },
             MemorySummary {
                 id: Uuid::new_v4(),
@@ -436,6 +448,9 @@ mod tests {
                 confidence: Confidence::Low,
                 created: Utc::now(),
                 access_count: 0,
+                superseded_by: None,
+                superseded_at: None,
+                is_active: true,
             },
         ];
 
@@ -467,6 +482,9 @@ mod tests {
                 confidence: Confidence::High,
                 created: Utc::now(),
                 access_count: 0,
+                superseded_by: None,
+                superseded_at: None,
+                is_active: true,
             },
             MemorySummary {
                 id: Uuid::new_v4(),
@@ -477,6 +495,9 @@ mod tests {
                 confidence: Confidence::High,
                 created: Utc::now(),
                 access_count: 0,
+                superseded_by: None,
+                superseded_at: None,
+                is_active: true,
             },
         ];
 

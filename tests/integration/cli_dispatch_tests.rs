@@ -108,3 +108,25 @@ fn test_clear_logs_command_returns_json() {
 
 // Note: Database-dependent tests would go here but require a test database setup
 // For now we test the CLI interface without actual DB operations
+
+// ============================================================================
+// Get Turn Command Tests
+// ============================================================================
+
+#[test]
+fn test_get_turn_missing_session_id_fails() {
+    Command::cargo_bin("claude-hippocampus")
+        .unwrap()
+        .arg("get-turn")
+        .assert()
+        .failure();
+}
+
+#[test]
+fn test_get_turn_invalid_session_id_fails() {
+    Command::cargo_bin("claude-hippocampus")
+        .unwrap()
+        .args(["get-turn", "invalid-uuid"])
+        .assert()
+        .failure();
+}

@@ -3,7 +3,10 @@ pub mod memory;
 pub mod search;
 pub mod stats;
 
-pub use maintenance::{consolidate, prune, save_session_summary};
+pub use maintenance::{
+    consolidate, list_superseded, prune, prune_data, purge_superseded, save_session_summary,
+    show_chain,
+};
 pub use memory::{
     add_memory, delete_memory, get_memory, update_memory, AddMemoryOptions, AddMemoryResult,
 };

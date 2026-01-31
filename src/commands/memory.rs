@@ -18,6 +18,8 @@ pub struct AddMemoryOptions {
     pub project_path: Option<String>,
     pub source_session_id: Option<Uuid>,
     pub source_turn_id: Option<Uuid>,
+    /// ID of memory this supersedes (marks old memory as inactive)
+    pub supersedes: Option<Uuid>,
 }
 
 /// Result of add_memory operation
@@ -30,11 +32,7 @@ pub enum AddMemoryResult {
 pub async fn add_memory(pool: &PgPool, opts: AddMemoryOptions) -> Result<AddMemoryResult> {
     // Check for duplicates
     if let Some(dup) = db::find_duplicate(pool, opts.memory_type, &opts.content).await? {
-        let response = DuplicateResponse::new(
-            dup.id,
-            &dup.scope,
-            &dup.summary,
-        );
+        let response = DuplicateResponse::new(dup.id, &dup.scope, &dup.summary);
         return Ok(AddMemoryResult::Duplicate(serde_json::to_value(response)?));
     }
 
@@ -64,6 +62,11 @@ pub async fn add_memory(pool: &PgPool, opts: AddMemoryOptions) -> Result<AddMemo
         opts.source_turn_id,
     )
     .await?;
+
+    // If this supersedes another memory, mark the old one as inactive
+    if let Some(old_id) = opts.supersedes {
+        db::supersede_memory(pool, old_id, id).await?;
+    }
 
     let response = SuccessResponse::new(AddMemoryData { id });
     Ok(AddMemoryResult::Success(serde_json::to_value(response)?))
@@ -141,12 +144,32 @@ mod tests {
             project_path: Some("/test/path".to_string()),
             source_session_id: None,
             source_turn_id: None,
+            supersedes: None,
         };
 
         assert_eq!(opts.memory_type, MemoryType::Learning);
         assert_eq!(opts.content, "Test content");
         assert_eq!(opts.tags.len(), 1);
         assert_eq!(opts.confidence, Confidence::High);
+        assert!(opts.supersedes.is_none());
+    }
+
+    #[test]
+    fn test_add_memory_options_with_supersedes() {
+        let supersedes_id = Uuid::new_v4();
+        let opts = AddMemoryOptions {
+            memory_type: MemoryType::Learning,
+            content: "New content".to_string(),
+            tags: vec![],
+            confidence: Confidence::High,
+            tier: Tier::Project,
+            project_path: None,
+            source_session_id: None,
+            source_turn_id: None,
+            supersedes: Some(supersedes_id),
+        };
+
+        assert_eq!(opts.supersedes, Some(supersedes_id));
     }
 
     #[test]

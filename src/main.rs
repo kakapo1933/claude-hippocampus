@@ -14,9 +14,10 @@ use claude_hippocampus::{
     HookInput, handle_session_start, handle_user_prompt_submit, handle_stop, handle_session_end,
 };
 use claude_hippocampus::commands::{
-    add_memory, consolidate, delete_memory, get_context, get_memory, get_stats, list_recent, prune,
-    save_session_summary, search_by_type, search_keyword, update_memory, AddMemoryOptions,
-    SearchByTypeOptions, SearchOptions, StatsOptions,
+    add_memory, consolidate, delete_memory, get_context, get_memory, get_stats, list_recent,
+    list_superseded, prune, prune_data, purge_superseded, save_session_summary, search_by_type,
+    search_keyword, show_chain, update_memory, AddMemoryOptions, SearchByTypeOptions,
+    SearchOptions, StatsOptions,
 };
 use claude_hippocampus::db::create_pool;
 use claude_hippocampus::models::{
@@ -44,6 +45,27 @@ async fn main() {
 /// Run the dispatched command
 async fn run(cli: Cli) -> Result<serde_json::Value> {
     match cli.command {
+        // GetTurn outputs just the turn number (no JSON wrapper)
+        // Uses database as source of truth
+        Command::GetTurn { session_id } => {
+            use claude_hippocampus::db::queries::{find_session_by_claude_id, get_next_turn_number};
+
+            let config = DbConfig::load()?;
+            let pool = create_pool(&config).await?;
+
+            // Find session and get current turn number from database
+            let session = find_session_by_claude_id(&pool, &session_id).await?;
+            let turn_number = match session {
+                Some(s) => {
+                    // get_next_turn_number returns next turn, so subtract 1 for current
+                    let next = get_next_turn_number(&pool, s.id).await?;
+                    if next > 1 { next - 1 } else { 0 }
+                }
+                None => 0,
+            };
+            Ok(serde_json::Value::Number(turn_number.into()))
+        }
+
         // Commands that don't require database connection
         Command::Logs { n, operation } => {
             let entries = read_logs(n as usize, operation.as_deref())?;
@@ -121,6 +143,7 @@ async fn dispatch_db_command(
             source_session_id,
             source_turn_id,
             claude_session_id: _,
+            supersedes,
         } => {
             let tags_vec = parse_tags(&tags);
             let source_session = source_session_id
@@ -129,6 +152,7 @@ async fn dispatch_db_command(
             let source_turn = source_turn_id
                 .as_deref()
                 .and_then(|s| Uuid::parse_str(s).ok());
+            let supersedes_uuid = supersedes.as_deref().and_then(|s| Uuid::parse_str(s).ok());
 
             let opts = AddMemoryOptions {
                 memory_type,
@@ -139,6 +163,7 @@ async fn dispatch_db_command(
                 project_path: project_path.map(|s| s.to_string()),
                 source_session_id: source_session,
                 source_turn_id: source_turn,
+                supersedes: supersedes_uuid,
             };
 
             let result = add_memory(pool, opts).await?;
@@ -205,8 +230,8 @@ async fn dispatch_db_command(
             consolidate(pool, scope_to_tier(tier), project_path).await
         }
 
-        Command::Prune { days, tier } => {
-            prune(pool, days as i32, scope_to_tier(tier), project_path).await
+        Command::Prune { low_days, medium_days, tier } => {
+            prune(pool, low_days as i32, medium_days as i32, scope_to_tier(tier), project_path).await
         }
 
         Command::SaveSessionSummary { summary } => {
@@ -214,6 +239,29 @@ async fn dispatch_db_command(
             let session_id = env::var("CLAUDE_SESSION_ID").unwrap_or_else(|_| String::new());
             let summary_json = serde_json::json!({ "summary": summary });
             save_session_summary(pool, &session_id, &summary_json).await
+        }
+
+        // Supersession commands
+        Command::ShowChain { id } => {
+            let uuid = Uuid::parse_str(&id)?;
+            show_chain(pool, uuid).await
+        }
+
+        Command::ListSuperseded { tier, limit } => {
+            list_superseded(pool, tier, limit, project_path).await
+        }
+
+        Command::PurgeSuperseded { days, tier } => {
+            purge_superseded(pool, days as i32, scope_to_tier(tier), project_path).await
+        }
+
+        Command::PruneData {
+            tool_calls_days,
+            turns_days,
+            sessions_days,
+            dry_run,
+        } => {
+            prune_data(pool, tool_calls_days, turns_days, sessions_days, dry_run).await
         }
 
         // Session commands
@@ -331,7 +379,7 @@ async fn dispatch_db_command(
         }
 
         // These are handled in run() before this function is called
-        Command::Logs { .. } | Command::ClearLogs | Command::Stats { .. } => {
+        Command::Logs { .. } | Command::ClearLogs | Command::Stats { .. } | Command::GetTurn { .. } => {
             unreachable!("These commands are handled in run() before database dispatch")
         }
     }

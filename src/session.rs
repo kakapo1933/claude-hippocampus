@@ -1,7 +1,7 @@
 //! Session state management for cross-hook communication.
 //!
-//! Handles loading/saving session state to `/tmp/claude-session-{id}.json`
-//! with legacy fallback to `/tmp/claude-session-state.json`.
+//! Handles loading/saving session state to `/tmp/hippocampus-session-{id}.json`
+//! with legacy fallback to `/tmp/hippocampus-session-state.json`.
 
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 const SESSION_STATE_DIR: &str = "/tmp";
-const SESSION_STATE_PREFIX: &str = "claude-session-";
-const LEGACY_SESSION_STATE_PATH: &str = "/tmp/claude-session-state.json";
+const SESSION_STATE_PREFIX: &str = "hippocampus-session-";
+const LEGACY_SESSION_STATE_PATH: &str = "/tmp/hippocampus-session-state.json";
 
 /// Session state persisted between hook invocations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -148,19 +148,19 @@ mod tests {
     #[test]
     fn test_get_session_state_path_with_id() {
         let path = get_session_state_path(Some("abc-123"));
-        assert_eq!(path, PathBuf::from("/tmp/claude-session-abc-123.json"));
+        assert_eq!(path, PathBuf::from("/tmp/hippocampus-session-abc-123.json"));
     }
 
     #[test]
     fn test_get_session_state_path_without_id() {
         let path = get_session_state_path(None);
-        assert_eq!(path, PathBuf::from("/tmp/claude-session-state.json"));
+        assert_eq!(path, PathBuf::from("/tmp/hippocampus-session-state.json"));
     }
 
     #[test]
     fn test_get_session_state_path_with_empty_id() {
         let path = get_session_state_path(Some(""));
-        assert_eq!(path, PathBuf::from("/tmp/claude-session-state.json"));
+        assert_eq!(path, PathBuf::from("/tmp/hippocampus-session-state.json"));
     }
 
     #[test]

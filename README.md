@@ -204,6 +204,12 @@ Add hooks to your `~/.claude/settings.json`:
         "type": "command",
         "command": "~/.claude/bin/claude-hippocampus hook post-tool-use"
       }
+    ],
+    "SessionEnd": [
+      {
+        "type": "command",
+        "command": "~/.claude/bin/claude-hippocampus hook session-end"
+      }
     ]
   }
 }

@@ -1,11 +1,25 @@
 ---
 name: brainstorming
+keywords:
+  - brainstorm
+  - design
+  - plan
+  - think about
+  - figure out
+  - explore options
+  - what should we build
+  - help me design
+  - idea
+  - spec
+  - requirements
+  - architecture
+  - discuss
 description: |
   This skill should be used before any creative work - creating features, building components,
   adding functionality, or modifying behavior. Trigger phrases include: "brainstorm", "let's think about",
-  "help me design", "what should we build", "explore options for", "figure out how to". Also use when
-  the user describes a vague idea that needs refinement, or when starting any non-trivial implementation
-  without a clear spec.
+  "help me design", "what should we build", "explore options for", "figure out how to", "I have an idea",
+  "let's plan", "design this", "spec out", "what's the best way to". Also use when the user describes
+  a vague idea that needs refinement, or when starting any non-trivial implementation without a clear spec.
 ---
 
 # Brainstorming Ideas Into Designs

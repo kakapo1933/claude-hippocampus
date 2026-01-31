@@ -1,6 +1,6 @@
 {
   "name": "hippocampus",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "PostgreSQL-backed persistent memory for Claude Code with semantic search",
   "author": {
     "name": "Kaipo Chen"

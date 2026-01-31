@@ -11,7 +11,15 @@ use crate::db::queries::{find_session_by_claude_id, record_tool_call};
 use crate::error::Result;
 use crate::session::load_session_state;
 
+use super::debug::debug as debug_log;
 use super::HookOutput;
+
+const HOOK_NAME: &str = "post-tool-use";
+
+/// Debug logging wrapper for this hook
+fn debug(msg: &str) {
+    debug_log(HOOK_NAME, msg);
+}
 
 /// Input format for PostToolUse hook (different from standard HookInput)
 #[derive(Debug, Clone, Deserialize)]
@@ -32,19 +40,26 @@ pub struct PostToolUseInput {
 
 /// Handle the PostToolUse hook
 pub async fn handle_post_tool_use(pool: &PgPool, input: &PostToolUseInput) -> Result<HookOutput> {
+    debug("=== Post tool use hook started ===");
+
     let tool_name = input.tool_name.as_deref().unwrap_or("unknown");
+    debug(&format!("Tool: {}", tool_name));
 
     // Get session and turn IDs
     let (session_id, turn_id) = if let Some(claude_session_id) = &input.session_id {
+        debug(&format!("Session ID: {}", claude_session_id));
         // Try session state file first
         if let Ok(Some(state)) = load_session_state(Some(claude_session_id)) {
+            debug(&format!("Loaded session state: session={:?}, turn={:?}", state.session_id, state.current_turn_id));
             (state.session_id, state.current_turn_id)
         } else {
             // Fallback to database lookup
+            debug("Session state not found, checking database");
             let session = find_session_by_claude_id(pool, claude_session_id).await?;
             (session.map(|s| s.id), None)
         }
     } else {
+        debug("No session ID provided");
         (None, None)
     };
 
@@ -58,7 +73,10 @@ pub async fn handle_post_tool_use(pool: &PgPool, input: &PostToolUseInput) -> Re
         }
     });
 
+    debug(&format!("Result summary length: {} chars", result_summary.as_ref().map(|s| s.len()).unwrap_or(0)));
+
     // Record the tool call (ignore errors - don't block on logging failure)
+    debug("Recording tool call to database");
     let _ = record_tool_call(
         pool,
         session_id,
@@ -68,6 +86,8 @@ pub async fn handle_post_tool_use(pool: &PgPool, input: &PostToolUseInput) -> Re
         result_summary,
     )
     .await;
+
+    debug("=== Post tool use hook completed ===");
 
     // Always approve
     Ok(HookOutput::approve())

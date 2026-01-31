@@ -2,13 +2,28 @@
 //!
 //! Ends the session and cleans up state files.
 
+use std::fs;
+
 use sqlx::postgres::PgPool;
 
 use crate::db::queries::end_session;
 use crate::error::Result;
 use crate::session::{clear_session_state, load_session_state};
 
+use super::debug::debug as debug_log;
 use super::{HookInput, HookOutput};
+
+const HOOK_NAME: &str = "session-end";
+
+/// Debug logging wrapper for this hook
+fn debug(msg: &str) {
+    debug_log(HOOK_NAME, msg);
+}
+
+/// Get marker file path for a session
+fn get_marker_file(claude_session_id: &str) -> String {
+    format!("/tmp/hippocampus-brain-cells-extract-{}", claude_session_id)
+}
 
 /// Handle the session-end hook.
 ///
@@ -17,27 +32,44 @@ use super::{HookInput, HookOutput};
 /// 3. Clean up session state file
 /// 4. Return approval
 pub async fn handle_session_end(pool: &PgPool, input: &HookInput) -> Result<HookOutput> {
+    debug("=== Session end hook started ===");
+
     let claude_session_id = input.session_id.clone().unwrap_or_default();
 
     if claude_session_id.is_empty() {
+        debug("No session ID provided, skipping");
         return Ok(HookOutput::approve());
     }
 
+    debug(&format!("Session ID: {}", claude_session_id));
+
     // Load session state
     let _state = load_session_state(Some(&claude_session_id))?;
+    debug("Session state loaded");
 
     // End session in database
+    debug("Ending session in database");
     match end_session(pool, &claude_session_id, None).await {
-        Ok(_) => {}
+        Ok(_) => {
+            debug("Session ended successfully in database");
+        }
         Err(crate::error::HippocampusError::SessionNotFound(_)) => {
             // Session not found is OK - may have been cleaned up already
+            debug("Session not found in database (already cleaned up)");
         }
         Err(e) => return Err(e),
     }
 
     // Clean up session state file
+    debug("Clearing session state file");
     clear_session_state(Some(&claude_session_id))?;
 
+    // Clean up marker file for this session only (safe for concurrent sessions)
+    let marker_file = get_marker_file(&claude_session_id);
+    debug(&format!("Removing marker file: {}", marker_file));
+    let _ = fs::remove_file(&marker_file);
+
+    debug("=== Session end hook completed ===");
     Ok(HookOutput::approve())
 }
 

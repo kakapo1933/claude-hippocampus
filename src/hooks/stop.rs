@@ -3,31 +3,21 @@
 //! Runs after each Claude response. Manages marker files to prevent duplicate processing.
 //! Spawns headless Claude to extract conclusions and save them to memory.
 
-use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 use std::process::{Command, Stdio};
-
-use chrono::Utc;
 
 use crate::error::Result;
 use crate::session::load_session_state;
 
+use super::debug::debug as debug_log;
 use super::{HookInput, HookOutput};
 
-const DEBUG: bool = true;
-const LOG_FILE: &str = "/tmp/claude-stop-hook-rust.log";
+const HOOK_NAME: &str = "stop";
 
-/// Debug logging to file (like JS version)
+/// Debug logging wrapper for this hook
 fn debug(msg: &str) {
-    if !DEBUG {
-        return;
-    }
-    let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ");
-    let line = format!("[{}] {}\n", timestamp, msg);
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(LOG_FILE) {
-        let _ = file.write_all(line.as_bytes());
-    }
+    debug_log(HOOK_NAME, msg);
 }
 
 /// Safely truncate a string at char boundaries (not byte boundaries)
@@ -37,7 +27,46 @@ fn truncate_str(s: &str, max_chars: usize) -> String {
 
 /// Marker file path for stop hook coordination
 fn get_marker_file(claude_session_id: &str) -> String {
-    format!("/tmp/claude-memory-extract-{}", claude_session_id)
+    format!("/tmp/hippocampus-brain-cells-extract-{}", claude_session_id)
+}
+
+/// Update the conversation turn with the assistant response
+fn update_turn_with_response(turn_id: &str, assistant_response: &str) {
+    if turn_id.is_empty() {
+        debug("Skipping turn update - no turn_id");
+        return;
+    }
+
+    debug(&format!(
+        "Updating turn {} with response (len: {})",
+        turn_id,
+        assistant_response.len()
+    ));
+
+    // Run update-turn command synchronously (it's fast)
+    match Command::new("claude-hippocampus")
+        .arg("update-turn")
+        .arg("--turn-id")
+        .arg(turn_id)
+        .arg("--response")
+        .arg(assistant_response)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+    {
+        Ok(output) => {
+            if output.status.success() {
+                debug("Turn updated successfully");
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                debug(&format!("Turn update failed: {}", stderr));
+            }
+        }
+        Err(e) => {
+            debug(&format!("Failed to run update-turn: {}", e));
+        }
+    }
 }
 
 /// Handle the stop hook.
@@ -105,6 +134,19 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
         }
     };
 
+    // Update conversation turn with assistant response (always, even if not substantive)
+    let turn_id_str = turn_id.map(|u| u.to_string()).unwrap_or_default();
+    if !turn_id_str.is_empty() {
+        debug(&format!(
+            "Saving assistant response to turn: {} (response len: {} chars)",
+            turn_id_str,
+            assistant_msg.len()
+        ));
+        update_turn_with_response(&turn_id_str, &assistant_msg);
+    } else {
+        debug("Warning: No turn_id available, cannot save assistant response to database");
+    }
+
     // Skip if not substantive
     if !should_extract(&user_msg, &assistant_msg) {
         debug("Skipping - turn not substantive");
@@ -117,7 +159,7 @@ pub async fn handle_stop(input: &HookInput) -> Result<HookOutput> {
         assistant_msg.clone(),
         claude_session_id.clone(),
         db_session_id.map(|u| u.to_string()).unwrap_or_default(),
-        turn_id.map(|u| u.to_string()).unwrap_or_default(),
+        turn_id_str.clone(),
     );
 
     debug(&format!(
@@ -228,6 +270,7 @@ pub struct TranscriptEntry {
 
 /// Represents an extracted memory decision from Claude
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ExtractionResult {
     pub memory_type: String,
     pub conclusion: String,
@@ -275,6 +318,7 @@ impl ExtractionContext {
 }
 
 /// Parse JSON response from Claude extraction
+#[allow(dead_code)]
 fn parse_extraction_response(output: &str) -> Option<ExtractionResult> {
     // Find JSON in output (might have extra text before/after)
     let start = output.find('{')?;
@@ -776,13 +820,13 @@ mod tests {
     #[test]
     fn test_get_marker_file() {
         let path = get_marker_file("test-session");
-        assert_eq!(path, "/tmp/claude-memory-extract-test-session");
+        assert_eq!(path, "/tmp/hippocampus-brain-cells-extract-test-session");
     }
 
     #[test]
     fn test_get_marker_file_prefix() {
         let path = get_marker_file("any-id");
-        assert!(path.starts_with("/tmp/claude-memory-extract-"));
+        assert!(path.starts_with("/tmp/hippocampus-brain-cells-extract-"));
     }
 
     #[test]

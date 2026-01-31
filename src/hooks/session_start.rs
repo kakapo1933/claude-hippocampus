@@ -10,7 +10,15 @@ use crate::error::Result;
 use crate::git::get_git_status;
 use crate::session::{load_session_state, save_session_state, SessionState};
 
+use super::debug::debug as debug_log;
 use super::{HookInput, HookOutput};
+
+const HOOK_NAME: &str = "session-start";
+
+/// Debug logging wrapper for this hook
+fn debug(msg: &str) {
+    debug_log(HOOK_NAME, msg);
+}
 
 /// Handle the session-start hook.
 ///
@@ -19,10 +27,14 @@ use super::{HookInput, HookOutput};
 /// 3. Load memory context
 /// 4. Return approval with context
 pub async fn handle_session_start(pool: &PgPool, input: &HookInput) -> Result<HookOutput> {
+    debug("=== Session start hook started ===");
+
     let claude_session_id = input
         .session_id
         .clone()
         .unwrap_or_else(|| format!("session_{}", chrono::Utc::now().timestamp_millis()));
+
+    debug(&format!("Session ID: {}", claude_session_id));
 
     let project_path = input
         .cwd
@@ -30,17 +42,21 @@ pub async fn handle_session_start(pool: &PgPool, input: &HookInput) -> Result<Ho
         .or_else(|| std::env::var("PROJECT_PATH").ok())
         .or_else(|| std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()));
 
+    debug(&format!("Project path: {:?}", project_path));
+
     // Check for existing session (reconnection case)
     let existing_state = load_session_state(Some(&claude_session_id))?;
     let mut session_id = None;
 
     if let Some(ref state) = existing_state {
+        debug("Found existing session state, checking if active");
         // Only reuse if same Claude session and session exists
         if state.claude_session_id.as_deref() == Some(&claude_session_id) {
             if let Some(ref id) = state.session_id {
                 // Verify session is still active
                 if let Some(session) = find_session_by_id(pool, *id).await? {
                     if session.status.as_str() == "active" {
+                        debug(&format!("Resuming active session: {}", id));
                         session_id = Some(*id);
                     }
                 }
@@ -50,9 +66,11 @@ pub async fn handle_session_start(pool: &PgPool, input: &HookInput) -> Result<Ho
 
     // Create new session if needed
     if session_id.is_none() {
+        debug("Creating new session");
         let git_status = project_path.as_ref().and_then(|p| get_git_status(p).ok()).flatten();
         let session = create_session(pool, &claude_session_id, project_path.as_deref(), git_status.as_ref()).await?;
         session_id = Some(session.id);
+        debug(&format!("Created session: {}", session.id));
 
         // Save session state for other hooks
         let new_state = SessionState {
@@ -62,10 +80,13 @@ pub async fn handle_session_start(pool: &PgPool, input: &HookInput) -> Result<Ho
             current_turn_id: None,
         };
         save_session_state(&new_state)?;
+        debug("Session state saved");
     }
 
     // Load memory context
+    debug("Loading memory context");
     let context_result = get_context(pool, 10, project_path.as_deref()).await?;
+    debug(&format!("Loaded {} context entries", context_result.count));
 
     // Build context message from entries
     let mut context_message = String::new();
@@ -87,6 +108,8 @@ pub async fn handle_session_start(pool: &PgPool, input: &HookInput) -> Result<Ho
         }
         context_message.push_str("</memory-context>\n");
     }
+
+    debug("=== Session start hook completed ===");
 
     if context_message.is_empty() {
         Ok(HookOutput::approve())

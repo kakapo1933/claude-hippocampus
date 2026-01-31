@@ -9,11 +9,19 @@ use crate::db::queries::{create_turn, find_session_by_claude_id, get_next_turn_n
 use crate::error::Result;
 use crate::session::{load_session_state, save_session_state};
 
+use super::debug::debug as debug_log;
 use super::{HookInput, HookOutput};
+
+const HOOK_NAME: &str = "user-prompt-submit";
+
+/// Debug logging wrapper for this hook
+fn debug(msg: &str) {
+    debug_log(HOOK_NAME, msg);
+}
 
 /// Marker file path for stop hook coordination
 fn get_marker_file(claude_session_id: &str) -> String {
-    format!("/tmp/claude-memory-extract-{}", claude_session_id)
+    format!("/tmp/hippocampus-brain-cells-extract-{}", claude_session_id)
 }
 
 /// Check if prompt is substantive enough to warrant memory search
@@ -52,25 +60,35 @@ fn should_search_memory(prompt: &str) -> bool {
 /// 3. Clear marker file
 /// 4. Output memory search instructions
 pub async fn handle_user_prompt_submit(pool: &PgPool, input: &HookInput) -> Result<HookOutput> {
+    debug("=== User prompt submit hook started ===");
+
     // Skip if this is an extraction instance (prevent recursion)
     if std::env::var("CLAUDE_MEMORY_EXTRACTION").is_ok() {
+        debug("Skipping - extraction instance");
         return Ok(HookOutput::approve());
     }
 
     let prompt = match &input.prompt {
         Some(p) if !p.is_empty() => p.clone(),
-        _ => return Ok(HookOutput::approve()),
+        _ => {
+            debug("No prompt provided, skipping");
+            return Ok(HookOutput::approve());
+        }
     };
 
     let claude_session_id = input.session_id.clone().unwrap_or_default();
+    debug(&format!("Session ID: {}", claude_session_id));
+    debug(&format!("Prompt length: {} chars", prompt.len()));
 
     // Load session state
     let _state = load_session_state(Some(&claude_session_id))?;
 
     // Find session and create turn
     if let Some(session) = find_session_by_claude_id(pool, &claude_session_id).await? {
+        debug(&format!("Found session in DB: {}", session.id));
         let turn_number = get_next_turn_number(pool, session.id).await?;
         let turn = create_turn(pool, session.id, turn_number, &prompt, None).await?;
+        debug(&format!("Created turn {} with ID: {}", turn_number, turn.id));
 
         // Update session state
         let new_state = crate::session::SessionState {
@@ -80,10 +98,14 @@ pub async fn handle_user_prompt_submit(pool: &PgPool, input: &HookInput) -> Resu
             current_turn_id: Some(turn.id),
         };
         save_session_state(&new_state)?;
+        debug("Session state updated");
+    } else {
+        debug("Session not found in database");
     }
 
     // Clear stop hook marker to allow response recording
     let marker_file = get_marker_file(&claude_session_id);
+    debug(&format!("Clearing marker file: {}", marker_file));
     let _ = fs::remove_file(&marker_file);
 
     // Build output text
@@ -142,6 +164,11 @@ IF no correction detected:
 
     // Output the instructions followed by JSON
     println!("{}", output_text);
+
+    let search_memory = should_search_memory(&prompt);
+    debug(&format!("Should search memory: {}", search_memory));
+    debug("=== User prompt submit hook completed ===");
+
     Ok(HookOutput::approve())
 }
 
@@ -241,19 +268,19 @@ mod tests {
     #[test]
     fn test_get_marker_file() {
         let path = get_marker_file("abc-123");
-        assert_eq!(path, "/tmp/claude-memory-extract-abc-123");
+        assert_eq!(path, "/tmp/hippocampus-brain-cells-extract-abc-123");
     }
 
     #[test]
     fn test_get_marker_file_with_special_chars() {
         let path = get_marker_file("session-2024-01-15T10:30:00");
-        assert_eq!(path, "/tmp/claude-memory-extract-session-2024-01-15T10:30:00");
+        assert_eq!(path, "/tmp/hippocampus-brain-cells-extract-session-2024-01-15T10:30:00");
     }
 
     #[test]
     fn test_get_marker_file_empty_session() {
         let path = get_marker_file("");
-        assert_eq!(path, "/tmp/claude-memory-extract-");
+        assert_eq!(path, "/tmp/hippocampus-brain-cells-extract-");
     }
 
     #[test]

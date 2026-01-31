@@ -2,6 +2,7 @@
 //!
 //! Each hook reads JSON from stdin and outputs JSON with decision/reason fields.
 
+pub mod debug;
 pub mod session_start;
 pub mod user_prompt_submit;
 pub mod stop;
